@@ -1,0 +1,49 @@
+# Параметры построения сети по умолчанию (этап 4, src/network.py). Сеть строится на каждый год.
+# Любой набор параметров получает хэш; рёбра сохраняются в data/networks/{hash}/.
+
+seed: 42
+
+sample:
+  federal_districts: [ДФО]      # ДФО | все ФО (Россия) | список
+  regions: []                   # свой список кодов субъектов (если не пуст — вместо ФО)
+  years: [2017, 2024]
+  exclude_boundary_change: false
+
+# Экономическое расстояние: признаки и веса a_k. Набор по умолчанию — слабо коррелирующие
+# между собой показатели с покрытием ≥ 88% МО ДФО во все годы 2017–2024 (reports/INDICATORS.md):
+# продукт, инвестиции, специализация, плотность, старение. budget_own_share не входит:
+# в 2023–2024 гг. он есть лишь у 70% и 43% МО ДФО.
+features:
+  gmp_pc: 1.0
+  invest_pc_nobudget: 1.0
+  hhi_emp: 1.0
+  density: 1.0
+  old_age_share: 1.0
+
+preprocess:
+  log: registry          # registry — логарифм по реестру показателей; none — без логарифма
+  method: minmax         # minmax | zscore
+  scope: panel           # panel (по всем годам выборки) | year
+  winsor: null           # например [0.01, 0.99]
+
+metric: weighted_l1      # weighted_l1: D = Σ a_k |x_ik − x_jk| / Σ a_k;  euclidean: sqrt(Σ a_k (x_ik − x_jk)² / Σ a_k)
+missing: drop            # drop — МО с пропуском хотя бы одного признака исключается в этом году (список — в stats);
+                         # pairwise — по признакам, известным у обоих МО (веса перенормируются)
+
+geo:
+  alpha: 1.0             # D = α·D_econ + (1 − α)·D_geo; 1 — только экономика
+  weights:               # веса географических компонентов (нормируются к сумме 1)
+    road_km: 1.0         # по автодорогам (СберИндекс, граф OSM)
+    rail_km: 0.0         # по железной дороге (СберИндекс, 2025)
+    line_km: 0.0         # по прямой между центрами МО
+    adjacency: 0.0       # 0 — общая граница, 1 — нет
+  no_road: line          # МО без дорожной/ж-д связи: line — расстояние по прямой | adjacency — только смежность | exclude — без географии
+  # времени в пути в данных СберИндекса нет (только км)
+
+edge_weight: gaussian    # gaussian: w = exp(−D² / (2σ²)), σ — медиана ненулевых D;  inverse: w = 1 / (1 + D)
+
+sparsify:
+  method: knn_mst        # knn | threshold | knn_mst (kNN + минимальное остовное дерево → граф связный)
+  k: 7
+  knn_mode: symmetric    # symmetric (ребро, если j среди соседей i ИЛИ наоборот) | mutual (И)
+  threshold: 0.5         # для method: threshold — оставить рёбра с w ≥ порога

@@ -1,0 +1,36 @@
+# Динамика кластеров и конвергенция (этап 6). Код — src/dynamics.py, src/convergence.py.
+
+seed: 42
+
+# Какое разбиение анализировать по умолчанию (из data/clusters/{hash сети}/labels.parquet)
+partition:
+  # По умолчанию для динамики — одна модель на всю панель (решение команды по итогам этапа 6):
+  # типы общие для всех лет, смена типа = изменение показателей МО, а не перекластеризация года.
+  # Покадровая кластеризация (per_year, в т.ч. KEFRiN и графовые методы) — для сравнения методов
+  # и индексов качества по годам (reports/CLUSTERS.md).
+  method: kmeans       # для pooled — только kmeans | ward | gmm
+  k: 6                 # согласованное k по индексам качества (reports/CLUSTERS.md)
+  mode: pooled         # pooled | per_year
+
+matching:
+  min_jaccard: 0.2     # кластер года t+1 наследует сквозной номер, только если мера Жаккара ≥ порога
+
+bootstrap:
+  n: 50                # число повторов бутстрэпа по узлам
+  frac: 1.0            # доля узлов в выборке (с возвращением)
+
+convergence:
+  # ряды: показатель из indicators_wide, либо ВМП конкретного метода (gmp.parquet)
+  series:
+    gmp_basic: {source: gmp, method: basic, column: gmp_pc_real, years: [2013, 2024],
+                name: "ВМП на душу, реальный (базовый метод, единый для всего окна)"}
+    gmp_sectoral: {source: gmp, method: sectoral, column: gmp_pc_real, years: [2017, 2024],
+                   name: "ВМП на душу, реальный (отраслевой метод)"}
+    wage: {source: indicators, column: wage_cpi, years: [2013, 2024], name: "Зарплата в ценах 2017 г. (ИПЦ)"}
+    payroll_pc: {source: indicators, column: payroll_pc_cpi, years: [2013, 2024], name: "ФОТ на жителя в ценах 2017 г."}
+    invest_pc_nobudget: {source: indicators, column: invest_pc_nobudget_cpi, years: [2013, 2024],
+                         name: "Инвестиции без бюджета на жителя в ценах 2017 г."}
+  samples: [ДФО, Россия]       # плюс каждый кластер разбиения partition (внутри ДФО)
+  balanced: true               # β-регрессия: только МО с данными в начале и в конце окна
+  min_years_reliable: 9        # при более коротком окне — предупреждение о ненадёжности
+  phillips_sul: {trim: 0.3, hp_lambda: 400, crit: -1.65}

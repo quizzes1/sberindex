@@ -1,0 +1,177 @@
+"""Конвергенция: σ по годам, «начальный уровень — рост» с β-регрессией, коэффициенты, по типам."""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+from common import CATEGORICAL, cluster_color, downloads, layout, mo, registry, sample_ids, sidebar
+
+from src import convergence
+from src.io import PROCESSED, load_yaml
+
+st.set_page_config(page_title="Конвергенция", layout="wide")
+side = sidebar()
+st.title("Конвергенция")
+
+cc = load_yaml("dynamics.yaml")["convergence"]
+reg = registry().set_index("code")
+SERIES = {
+    "gmp_basic": "ВМП на душу, реальный — базовый метод (единый для 2013–2024)",
+    "gmp_sectoral": "ВМП на душу, реальный — отраслевой метод (2017–2024)",
+}
+money = [c for c in reg.index if c.endswith("_cpi")] + [
+    c
+    for c in ["wage_real", "hhi_emp", "density", "old_age_share", "budget_own_share", "living_space_pc"]
+    if c in reg.index
+]
+opts = list(SERIES) + money
+c1, c2 = st.columns([2, 1])
+var = c1.selectbox("Показатель", opts, format_func=lambda c: SERIES.get(c) or f"{reg.at[c, 'name']} ({c})")
+yr_default = (2017, 2024) if var == "gmp_sectoral" else (2013, 2024)
+y0, y1 = c2.slider("Окно", 2013, 2024, yr_default)
+if var.startswith("gmp_") and not var.endswith("_cpi"):
+    st.caption(
+        "ВМП — расчётная оценка команды. Для длинного окна берётся базовый метод: склейка базового (до 2016) и "
+        "отраслевого (с 2017) создала бы искусственный скачок."
+    )
+
+
+@st.cache_data(show_spinner=False)
+def series(var: str) -> pd.DataFrame:
+    """territory_id, year, value — МО, действующие в конце окна (с достроенными значениями преемников)."""
+    m = mo()
+    if var in SERIES:
+        g = pd.read_parquet(PROCESSED / "gmp.parquet")
+        d = g[g["method"].eq("basic" if var == "gmp_basic" else "sectoral")][
+            ["territory_id", "year", "gmp_pc_real", "valid_in_year", "derived"]
+        ].rename(columns={"gmp_pc_real": "value"})
+    else:
+        d = pd.read_parquet(
+            PROCESSED / "indicators_wide.parquet", columns=["territory_id", "year", var, "valid_in_year", "derived"]
+        ).rename(columns={var: "value"})
+    d = d[(d["valid_in_year"] | d["derived"]) & d["territory_id"].isin(m.loc[m["active"], "territory_id"])]
+    return d[["territory_id", "year", "value"]].dropna()
+
+
+d = series(var)
+d = d[d["year"].between(y0, y1)]
+ids = sample_ids(side)
+if (y1 - y0 + 1) < cc["min_years_reliable"]:
+    st.warning(
+        f"Окно {y0}–{y1} — {y1 - y0 + 1} лет. При окне короче ~9–10 лет выводы о конвергенции ненадёжны: σ-тренд "
+        "опирается на несколько точек, панельная β-оценка смещена (смещение Никелла)."
+    )
+
+samples = {"Выборка": d[d["territory_id"].isin(ids)], "Россия": d}
+types = st.session_state.get("types_last")
+if types:
+    t = pd.Series(types)
+    for k in sorted(t.unique()):
+        samples[f"Тип {k}"] = d[d["territory_id"].isin(set(t.index[t.eq(k)]) & ids)]
+    st.caption("Типы — сквозные типы последнего года со страницы «Динамика».")
+else:
+    st.caption("Чтобы считать конвергенцию по типам, откройте страницу «Динамика» (типы берутся оттуда).")
+
+region = mo().set_index("territory_id")["region_code"]
+
+
+@st.cache_data(show_spinner="Считаю…", max_entries=64)
+def compute(var: str, y0: int, y1: int, key: str, ids_tuple: tuple):
+    sd = d[d["territory_id"].isin(ids_tuple)]
+    st_, tr = convergence.sigma(sd)
+    ba = convergence.beta_absolute(sd, y0, y1)
+    bp = convergence.beta_panel(sd, region)
+    ps = convergence.log_t(convergence._log_panel(sd), cc["phillips_sul"]["trim"], cc["phillips_sul"]["hp_lambda"])
+    return st_, tr, ba, bp, ps
+
+
+res = {
+    name: compute(var, y0, y1, name, tuple(sorted(sd["territory_id"].unique())))
+    for name, sd in samples.items()
+    if sd["territory_id"].nunique() >= 5
+}
+
+st.subheader("σ-конвергенция: разброс ln y по МО")
+fig = go.Figure()
+for i, (name, (st_, *_)) in enumerate(res.items()):
+    color = CATEGORICAL[i] if not name.startswith("Тип") else cluster_color(int(name.split()[1]))
+    fig.add_trace(
+        go.Scatter(
+            x=st_["year"],
+            y=st_["sd_log"],
+            mode="lines+markers",
+            name=name,
+            line=dict(width=2, color=color, dash="dot" if name.startswith("Тип") else "solid"),
+            marker=dict(size=8),
+            hovertemplate=name + "<br>%{x}: σ = %{y:.3f}<extra></extra>",
+        )
+    )
+st.plotly_chart(layout(fig, 380, yaxis_title="σ(ln y)"), width="stretch")
+
+st.subheader("β-конвергенция: начальный уровень и среднегодовой рост")
+pick = st.selectbox("Выборка для диаграммы", list(res))
+ba = res[pick][2]
+if np.isfinite(ba.get("b", np.nan)):
+    names = mo().set_index("territory_id")["name"]
+    x, g = ba["level0"], ba["growth"]
+    xx = np.linspace(x.min(), x.max(), 50)
+    fig = go.Figure(
+        go.Scatter(
+            x=x,
+            y=g,
+            mode="markers",
+            marker=dict(size=8, color=CATEGORICAL[0], opacity=0.7, line=dict(width=1, color="white")),
+            text=[names.get(i, i) for i in x.index],
+            name="МО",
+            hovertemplate="%{text}<br>ln y₀ = %{x:.2f}<br>рост = %{y:.2%} в год<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=xx,
+            y=ba["a"] + ba["b"] * xx,
+            mode="lines",
+            line=dict(width=2, color=CATEGORICAL[1]),
+            name=f"β = {ba['b']:.4f} (p = {ba['p']:.3f})",
+            hoverinfo="skip",
+        )
+    )
+    st.plotly_chart(
+        layout(
+            fig,
+            420,
+            xaxis_title=f"ln y, {y0}",
+            yaxis_title=f"среднегодовой рост ln y, {y0}–{y1}",
+            yaxis_tickformat=".1%",
+        ),
+        width="stretch",
+    )
+
+st.subheader("Коэффициенты")
+rows = []
+for name, (_st, tr, ba, bp, ps) in res.items():
+    rows.append(
+        {
+            "выборка": name,
+            "МО": ba.get("n"),
+            "σ: наклон в год": tr["slope"],
+            "σ: p": tr["p"],
+            "β абсолютная": ba.get("b"),
+            "β: p": ba.get("p"),
+            "скорость λ": ba.get("lambda"),
+            "полупериод, лет": ba.get("half_life"),
+            "β панельная (FE МО и года)": bp.get("b"),
+            "β панель: p": bp.get("p"),
+            "log t (Phillips–Sul): t": ps.get("t"),
+        }
+    )
+tab = pd.DataFrame(rows)
+st.dataframe(tab.style.format({c: "{:.4f}" for c in tab.columns if c not in ("выборка", "МО")}), width="stretch")
+st.caption(
+    "σ: наклон < 0 — разброс сокращается. β < 0 — МО с низким начальным уровнем растут быстрее; λ — скорость "
+    "сближения, полупериод — за сколько лет отставание сокращается вдвое. Панельная β учитывает собственный уровень "
+    "каждого МО (условная конвергенция). log t: t < −1,65 — общей конвергенции нет (возможны клубы)."
+)
+downloads(tab, {"боковая_панель": side, "показатель": var, "окно": [y0, y1]}, "convergence")

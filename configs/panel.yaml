@@ -1,0 +1,71 @@
+# Годовая панель territory_id × year (этап 2): базовые ряды из исходных источников.
+# Расчётные показатели (на душу, доли, ВМП и т.п.) — этап 3, configs/indicators.yaml.
+#
+# Поля ряда:
+#   id     — имя в панели;  codes — коды БДПМО по приоритету (первый, где есть значение);
+#   agg    — как объединять несколько исходных МО в одну территорию (смена границ):
+#            sum — сумма (аддитивные), mean — взвешенное среднее, none — не объединять (пропуск);
+#   weight — вес для mean (id другого ряда; по умолчанию pop);
+#   select — переопределение «итогового» значения разреза (иначе правило из sources.yaml);
+#   fill   — запасные коды, которыми заполняются пропуски (строка получает флаг filled_<код>).
+
+years: [2013, 2024]
+
+# Объединение рядов при смене границ (см. reports/DATA.md):
+boundary:
+  aggregate_predecessors: true   # для преемника объединения строятся значения прошлых лет из предшественников
+  link_transfer: true            # при передаче части территории ряд предшественника с тем же ОКТМО переносится преемнику
+
+series:
+  # --- население и демография
+  - {id: pop, codes: [8112027], agg: sum, fill: [8112014, 8112013]}
+  - {id: pop_avg, codes: [8112013], agg: sum}
+  - {id: pop_young, codes: [8112014], agg: sum, select: {vozr: ["Моложе трудоспособного возраста"]}}
+  - {id: pop_working, codes: [8112014], agg: sum, select: {vozr: ["Трудоспособный возраст"]}}
+  - {id: pop_old, codes: [8112014], agg: sum, select: {vozr: ["Старше трудоспособного возраста"]}}
+  - {id: births, codes: [8112003], agg: sum}
+  - {id: deaths, codes: [8112001], agg: sum}
+  - {id: children_5_18, codes: [8112024], agg: sum}
+  # --- занятость и зарплата (крупные и средние организации, без МСП)
+  - {id: workers, codes: [8423005, 8123005], agg: sum, sectoral: true}
+  - {id: payroll, codes: [8423006, 8123006], agg: sum, sectoral: true}
+  - {id: wage, codes: [8423007, 8123007], agg: mean, weight: workers, sectoral: true}
+  - {id: wage_lm, codes: [8213002], agg: mean, weight: workers}
+  # --- инвестиции (выбор ряда — в интерфейсе)
+  - {id: invest, codes: [8109001], agg: sum}
+  - {id: invest_pc_nobudget, codes: [8109003], agg: mean}
+  # --- отгрузка
+  - {id: shipped, codes: [8401011, 8201001], agg: sum, sectoral: true}
+  # --- местный бюджет
+  - {id: budget_rev, codes: [8013001], agg: sum}
+  - {id: budget_transfers, codes: [8013001], agg: sum, select: {stdohod: ["Безвозмездные поступления"]}}
+  - {id: budget_own_share, codes: [8313015, 8013015], agg: mean}
+  # --- территория, жильё, торговля, сельское хозяйство
+  - {id: area_ha, codes: [8006001], agg: sum}
+  - {id: housing_m2, codes: [8010001], agg: sum}
+  - {id: housing_pc_src, codes: [8215001], agg: mean}
+  - {id: living_space_pc, codes: [8211001], agg: mean}
+  - {id: retail, codes: [8401003, 8201003], agg: sum}
+  - {id: catering, codes: [8401006], agg: sum}
+  - {id: agri_output, codes: [8007010], agg: sum}
+  # --- социальная сфера
+  - {id: clinics, codes: [8018000], agg: sum}
+  - {id: teachers, codes: [8440031], agg: sum}
+  - {id: preschool_coverage, codes: [8014006], agg: mean, weight: children_5_18}
+  - {id: no_transport_share, codes: [8155002], agg: mean}
+  - {id: bad_roads_share, codes: [8106005], agg: none}
+  - {id: wage_kindergarten, codes: [8213003], agg: mean}
+  - {id: wage_school, codes: [8213004], agg: mean}
+  # --- предприятия
+  - {id: n_orgs, codes: [9010002], agg: sum}
+  - {id: n_ip, codes: [9010003], agg: sum}
+  - {id: revenue_bo, codes: [7000005], agg: sum}
+  - {id: profit, codes: [8942001], agg: sum}
+
+# Безналичные траты СберИндекса: категория → код
+sber_categories:
+  Продовольствие: food
+  Маркетплейсы: marketplaces
+  Транспорт: transport
+  Здоровье: health
+  Общественное питание: catering

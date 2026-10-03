@@ -1,0 +1,3 @@
+# Необязательно: PyTorch для метода CANUS (CPU-сборка)
+--index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu

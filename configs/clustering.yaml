@@ -1,0 +1,42 @@
+# Кластеризация и индексы качества (этап 5). Код — src/clustering.py, src/icvi.py.
+
+seed: 42
+k_range: [2, 10]          # таблица индексов для каждого k
+
+# Сеть, на которой работают графовые методы и сетевые индексы (AVI, AVU, MQ):
+# параметры configs/network.yaml + переопределения ниже. Признаки для методов по атрибутам и
+# для индексов SW, CH, S_Dbw — те же нормированные признаки, что и у сети.
+network_override: {}
+
+methods:
+  # --- по атрибутам
+  kmeans: {family: attributes, n_init: 20}
+  ward: {family: attributes}
+  gmm: {family: attributes, covariance_type: diag, n_init: 5}
+  # --- по графу (веса рёбер разреженной сети)
+  leiden: {family: graph, resolution_search: true}   # подбор resolution под заданное k
+  spectral: {family: graph}
+  # --- для атрибутированных сетей (внешний код, см. external)
+  kefrin: {family: attributed_network, metric: euclidean, rho: 1.0, xi: 1.0, n_init: 10}
+  canus: {family: attributed_network, epochs: 300, rho: 1.0, zeta: 1.0, attribute_distance: minkowski,
+          network_distance: cosine}
+
+# Внешние репозитории: клонируются на закреплённом коммите в external/ (вне git, код в наш
+# репозиторий не копируется). Запуск: python scripts/fetch_external.py
+external:
+  KEFRiN:
+    url: https://github.com/Sorooshi/KEFRiN
+    commit: f9f96b1a778cb8d2e5ba85baae452dc813c4f110
+    license: "не указана: файла LICENSE нет (README ссылается на MIT, но файла нет)"
+    paper: "Shalileh S., Mirkin B. Community partitioning over feature-rich networks using an extended k-means method. Entropy 2022, 24(5), 626"
+  CANUS:
+    url: https://github.com/Sorooshi/CANUS
+    commit: 754622af6eff9604a590e862a108c4c4212acf2d
+    license: "не указана (по умолчанию — все права у автора)"
+    paper: "Shalileh S. A filtered gradient descent clustering method to recover communities in attributed networks. IEEE Access, 2025"
+    requires: torch
+  Pattern:
+    url: https://github.com/Sorooshi/Pattern
+    commit: e5ff50b34a1bbd723b9ae2e46c122a06e782daea
+    license: GPL-3.0
+    purpose: "эталонная реализация AVI/AVU/ANUI — только для сверки в тестах"

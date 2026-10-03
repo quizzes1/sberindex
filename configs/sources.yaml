@@ -1,0 +1,145 @@
+# Реестр источников данных. Всё, что качает scripts/download_data.py, описано здесь.
+# Поля: id — имя источника; url — откуда качать; dest — путь внутри data/raw/;
+# kind — тип файла; note — зачем нужен. Для API СберИндекса нужен заголовок RqUID (см. src/io.py).
+
+tls:
+  # Сертификаты, которые добавляются к certifi в отдельный бандл certs/ca-bundle.pem.
+  # Проверка TLS НЕ отключается нигде.
+  extra_certs:
+    - path: certs/LiteSSLRSACA2025.pem
+      why: "sberindex.ru отдаёт неполную цепочку (нет промежуточного TrustAsia LiteSSL RSA CA 2025)"
+      sha256: "AD:4D:F1:41:6B:38:7E:6A:BB:F8:61:2B:58:07:C2:A2:B4:04:F6:AA:3A:A5:0E:AB:36:0F:DE:30:EB:6F:0F:11"
+      source: "http://ica.litessl.com/LiteSSLRSACA2025.crt (AIA из сертификата sberindex.ru)"
+    - path: certs/russian_trusted_root_ca.pem
+      why: "sberbank.com подписан корнем Минцифры"
+      sha256: "D2:6D:2D:02:31:B7:C3:9F:92:CC:73:85:12:BA:54:10:35:19:E4:40:5D:68:B5:BD:70:3E:97:88:CA:8E:CF:31"
+      source: "https://gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer"
+    - path: certs/russian_trusted_sub_ca_2024.pem
+      why: "rosstat.gov.ru не отдаёт промежуточный сертификат Минцифры (Russian Trusted Sub CA)"
+      sha256: "21:55:78:50:36:C9:00:DB:B5:F1:BB:2A:15:69:C8:0C:55:59:5B:D6:BF:94:86:7A:29:BB:DD:BC:7D:88:A3:F2"
+      source: "http://nuc-cdp.digital.gov.ru/cdp/subca_ssl_rsa2024.crt (AIA из сертификата rosstat.gov.ru)"
+
+sber:
+  - id: sber_dict
+    url: https://www.sberbank.com/common/files/t_dict_municipal.rar
+    dest: sber/t_dict_municipal.rar
+    note: "Справочник МО СберИндекса (xlsx версий + gpkg полигонов), обновление 25.10.2024"
+  - id: sber_dict_meta
+    url: https://www.sberbank.ru/common/img/uploaded/files/pdf/sberindex/metadata_municipal_dict_sberindex_2.pdf
+    dest: sber/metadata_municipal_dict_sberindex_2.pdf
+    note: "Методология и описание атрибутов справочника"
+  - id: sber_hackathon
+    url: https://sberindex.ru/api/files/download/7a675947-398d-45e6-8d61-c4299a6203be
+    dest: sber/hackathonlicence.zip
+    api: true
+    note: "Архив хакатона: consumption, market_access, connection (дороги/ж-д, км), PDF"
+  - id: sber_railway
+    url: https://www.sberbank.com/common/img/uploaded/files/pdf/sberindex/t_pairs_distance_railway.zip
+    dest: sber/t_pairs_distance_railway.zip
+    note: "Ж/д расстояния между МО на 01.12.2025 (обновлённая версия)"
+  - id: sber_consumption_api
+    url: https://sberindex.ru/api/dataset/v1/download/potrebitelskie-beznalicnye-rashody-na-urovne-munizipalnyh-obrazovanij/parquet
+    dest: sber/consumption_api.parquet
+    api: true
+    note: "Альтернативный путь к тратам (сверка с архивом хакатона)"
+
+rosstat:
+  - id: vrp_s1998
+    url: https://rosstat.gov.ru/storage/mediabank/VRP_s1998.xlsx
+    dest: rosstat/VRP_s1998.xlsx
+    note: "ВРП субъектов 1998–2024, на душу, индексы физического объёма"
+  - id: vrp_okved2
+    url: https://rosstat.gov.ru/storage/mediabank/VRP_OKVED2_s_2016.xlsx
+    dest: rosstat/VRP_OKVED2_s_2016.xlsx
+    note: "ВДС субъектов по отраслям ОКВЭД2 2016–2024 и индексы физобъёма — главный вход для ВМП"
+  - id: vrp_okved2007
+    url: https://rosstat.gov.ru/storage/mediabank/VRP_OKVED2007.xlsx
+    dest: rosstat/VRP_OKVED2007.xlsx
+    note: "ВДС субъектов по ОКВЭД-2007 (годы до 2016)"
+  - id: vgp_dfo
+    url: https://rosstat.gov.ru/storage/mediabank/VGP_DFO_2023.xlsx
+    dest: rosstat/VGP_DFO_2023.xlsx
+    note: "Валовой городской продукт городов ДФО 2023–2024 (внешняя сверка ВМП)"
+  - id: vgp_def
+    url: https://rosstat.gov.ru/storage/mediabank/ponyatiya-i-opredeleniya-vgp.pdf
+    dest: rosstat/ponyatiya-i-opredeleniya-vgp.pdf
+    note: "Методика ВГП Росстата"
+  - id: msp_in_gdp
+    url: https://rosstat.gov.ru/storage/mediabank/MSP_v_VVP_s2017.xlsx
+    dest: rosstat/MSP_v_VVP_s2017.xlsx
+    note: "Доля МСП в ВВП — для оценки занижения ВМП из-за отсутствия малого бизнеса"
+
+tochno_regions:
+  - id: regions_collection
+    url: https://storage.yandexcloud.net/tochno-st-catalog/Rosstat/data_regions_collection_102_v20260313/data_regions_collection_102_v20260313.parquet
+    dest: tochno/regions/data_regions_collection_102_v20260313.parquet
+    note: "Сборники Росстата по регионам (ИПЦ, фиксированный набор, ВРП, МСП)"
+  - id: regions_collection_desc
+    url: https://storage.yandexcloud.net/tochno-st-catalog/Rosstat/data_regions_collection_102_v20260313/description_regions_collection_102_v20260313.pdf
+    dest: tochno/regions/description_regions_collection_102_v20260313.pdf
+
+tochno_bdmo:
+  version: v20250918
+  description_url: https://storage.yandexcloud.net/tochno-st-catalog/Rosstat/data_bdmo_118_v20250918/description_bdpmo_v20250918.pdf
+  indicator_list_url: "https://drive.google.com/uc?export=download&id=1Z66eXdgzyBg2NPV4cRzrTtv6BSZFVaAi"
+  # Шаблон ссылки на файл одного показателя (так не нужно качать архивы разделов по 1–4 ГБ)
+  indicator_url: "https://storage.yandexcloud.net/tochno-st-catalog/Rosstat/data_bdmo_118_v20250918/indicators/section{section}/data_Y4{code}_112_v20250918.zip"
+  dest_dir: tochno/bdmo
+  # role: для чего показатель; optional: true — не качается по умолчанию (--with-optional)
+  # total: какие значения разрезов считать «итогом» (если не задано — значение, начинающееся
+  #        с «Всего»/«Итого»/«Все население»/«Хозяйства всех категорий»)
+  # period: какой период брать как годовое значение (по умолчанию — «Январь-декабрь»,
+  #        иначе «Значение показателя за год», «На 1 января», «На конец года»)
+  indicators:
+    # --- Население (31, 41)
+    - {code: 8112027, section: 31, role: "P: население на 1 января (оценка)", period: "На 1 января"}
+    - {code: 8112013, section: 41, role: "среднегодовая численность населения"}
+    - {code: 8112001, section: 31, role: "умершие"}
+    - {code: 8112003, section: 31, role: "родившиеся"}
+    - {code: 8112024, section: 41, role: "дети 5–18 лет", total: {vozr: ["5‒18"]}}
+    - {code: 8112014, section: 31, role: "население по полу и возрасту (запасной источник P)", period: "На 1 января"}
+    - {code: 8112023, section: 31, role: "миграционный прирост (1,2 ГБ)", optional: true}
+    # --- Занятость и зарплата (32, 41): L, W, ФОТ по ОКВЭД2 (2017+) и ОКВЭД (2008–2016)
+    - {code: 8423005, section: 32, role: "L по ОКВЭД2, 2017+"}
+    - {code: 8423006, section: 32, role: "ФОТ по ОКВЭД2, 2017+"}
+    - {code: 8423007, section: 32, role: "W по ОКВЭД2, 2017+"}
+    - {code: 8123005, section: 32, role: "L по ОКВЭД, 2008–2016"}
+    - {code: 8123006, section: 32, role: "ФОТ по ОКВЭД, 2008–2016"}
+    - {code: 8123007, section: 32, role: "W по ОКВЭД, 2008–2016"}
+    - {code: 8213002, section: 41, role: "W крупных и средних + НКО (ряд 2008–2024 без разрыва)"}
+    # --- Инвестиции (9, 41)
+    - {code: 8109001, section: 9, role: "инвестиции в основной капитал (без МСП)",
+       total: {istinv: ["Всего"], okved2: ["Всего по обследуемым видам экономической деятельности", "ND"]}}
+    - {code: 8109003, section: 41, role: "инвестиции на душу без бюджетных средств"}
+    # --- Отгрузка (39)
+    - {code: 8401011, section: 39, role: "отгрузка по ОКВЭД2, 2016+ (все крупные и средние)"}
+    - {code: 8401008, section: 39, role: "отгрузка по фактическим ОКВЭД2 (>15 чел.), 2017+"}
+    - {code: 8201001, section: 39, role: "отгрузка по ОКВЭД, 2007–2016"}
+    # --- Местный бюджет (13, 41)
+    - {code: 8013001, section: 13, role: "доходы местного бюджета (уровень), 2006–2020"}
+    - {code: 8013015, section: 13, role: "доля налоговых и неналоговых доходов, 2010–2020"}
+    - {code: 8313015, section: 41, role: "доля налоговых и неналоговых доходов, 2010–2024"}
+    # --- Территория, жильё, торговля, сельское хозяйство
+    - {code: 8006001, section: 6, role: "площадь земель МО"}
+    - {code: 8010001, section: 37, role: "ввод жилья",
+       total: {mosh: ["Жилые здания, жилые помещения в нежилых зданиях и жилые дома, построенные населением", "Жилые здания"]}}
+    - {code: 8215001, section: 41, role: "ввод жилья на жителя"}
+    - {code: 8211001, section: 41, role: "жилплощадь на жителя"}
+    - {code: 8401003, section: 2, role: "оборот розничной торговли (без МСП), 2010+",
+       total: {okved2: ["Всего по обследуемым видам экономической деятельности"]}}
+    - {code: 8401006, section: 2, role: "оборот общепита (без МСП)"}
+    - {code: 8201003, section: 2, role: "оборот розничной торговли (без МСП), ОКВЭД-2007, 2009–2016"}
+    - {code: 8007010, section: 7, role: "продукция сельского хозяйства (ВМП, отрасль A)"}
+    # --- Социальная сфера (33, 34, 41)
+    - {code: 8018000, section: 33, role: "число лечебно-профилактических организаций"}
+    - {code: 8440031, section: 34, role: "педагогические работники", total: {dol: ["Педагогические работники — всего"]}}
+    - {code: 8014006, section: 41, role: "охват детей дошкольным образованием"}
+    - {code: 8155002, section: 41, role: "доля населения без регулярного транспортного сообщения"}
+    - {code: 8106005, section: 41, role: "доля дорог не по нормативу"}
+    - {code: 8213003, section: 41, role: "W в муниципальных детсадах"}
+    - {code: 8213004, section: 41, role: "W в муниципальных школах"}
+    # --- Предприятия, малый бизнес
+    - {code: 9010002, section: 39, role: "число организаций (ЕГРЮЛ), 2024+", period: "На 1 января"}
+    - {code: 9010003, section: 39, role: "число ИП, 2023+", period: "На 1 января"}
+    - {code: 7000005, section: 46, role: "выручка по бухотчётности (вкл. МСП?), 2021–2023"}
+    - {code: 8942001, section: 42, role: "прибыль до налогообложения", total: {okfs: ["Всего (ГД-ПТК)"]}}

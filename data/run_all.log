@@ -1,0 +1,17 @@
+=== build_panel.py 
+=== build_panel.py: 269 с
+=== build_gmp.py 
+=== build_gmp.py: 94 с
+=== build_indicators.py 
+=== build_indicators.py: 4 с
+=== build_networks.py 
+=== build_networks.py: 18 с
+=== build_clusters.py --quick
+=== build_clusters.py: 27 с
+=== build_dynamics.py 
+=== build_dynamics.py: 7 с
+=== build_convergence.py 
+=== build_convergence.py: 79 с
+.....................................................................    [100%]
+69 passed in 38.88s
+DONE

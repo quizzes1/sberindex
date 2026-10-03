@@ -1,0 +1,97 @@
+# Реестр показателей (этап 3). Код расчёта — src/indicators.py, функция с именем code
+# (для отраслевых — функция с именем шаблона, напр. emp_share). Добавить показатель =
+# запись здесь + функция там.
+#
+# Поля: code, name (рус.), formula, source, unit, block (economy | social | consumption | quality),
+# log (логарифмировать перед нормировкой), direction (higher_better | lower_better | neutral),
+# money (денежный: строится и версия в ценах базового года «_cpi»), sectoral (по разделам ОКВЭД2:
+# коды вида <code>_<раздел>), note — ограничения.
+
+params:
+  base_year: 2017            # базовый год цен для «_cpi»
+  gmp_method: default        # default (отраслевой, где есть; иначе базовый с флагом) | sectoral | basic
+  lq_base: ДФО               # база коэффициента локализации lq_*; lq_ru_* — всегда по России
+  window: [2013, 2024]
+
+indicators:
+  # ---------------------------------------------------------------- экономика
+  - {code: gmp_pc, name: "ВМП на душу населения (оценка команды)", formula: "ВМП / P", source: "расчёт (src/gmp.py)",
+     unit: "руб.", block: economy, log: true, direction: higher_better, money: true,
+     note: "Расчётная оценка команды, не официальная статистика. Метод — параметр gmp_method."}
+  - {code: gmp_pc_real, name: "ВМП на душу в ценах базового года (дефлятор ВРП)", formula: "ВМП / P / дефлятор ВРП субъекта",
+     source: "расчёт", unit: "руб. базового года", block: economy, log: true, direction: higher_better}
+  - {code: gmp_structure, name: "Доля отрасли в ВМП", formula: "ВДС_k МО / ВМП", source: "расчёт, метод 2",
+     unit: "доля", block: economy, log: false, direction: neutral, sectoral: true}
+  - {code: wage, name: "Среднемесячная зарплата", formula: "W", source: "БДПМО 8423007/8123007",
+     unit: "руб.", block: economy, log: true, direction: higher_better, money: true, note: "крупные и средние организации"}
+  - {code: wage_real, name: "Зарплата в фиксированных наборах", formula: "W / стоимость фиксированного набора в субъекте",
+     source: "БДПМО; Росстат (фикс. набор)", unit: "наборов", block: economy, log: true, direction: higher_better,
+     note: "поправка на межрегиональные различия цен; набор — на конец года"}
+  - {code: payroll_pc, name: "ФОТ на жителя", formula: "ФОТ / P", source: "БДПМО 8423006/8123006",
+     unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true}
+  - {code: shipped_pc, name: "Отгрузка на жителя", formula: "отгрузка / P", source: "БДПМО 8401011/8201001",
+     unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true, note: "без МСП"}
+  - {code: invest_pc, name: "Инвестиции в основной капитал на жителя", formula: "инвестиции / P", source: "БДПМО 8109001",
+     unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true,
+     note: "без МСП; нет Бурятии и Якутии до 2021 г.; ряд до 2023 г."}
+  - {code: invest_pc_nobudget, name: "Инвестиции на жителя без бюджетных средств", formula: "ряд Росстата",
+     source: "БДПМО 8109003", unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true,
+     note: "другое определение: без бюджетных средств; 88–100% МО ДФО"}
+  - {code: invest_share, name: "Инвестиции к продукту", formula: "инвестиции / ВМП", source: "БДПМО 8109001; расчёт",
+     unit: "доля", block: economy, log: false, direction: neutral}
+  - {code: emp_share, name: "Доля занятых в отрасли", formula: "L_k / L", source: "БДПМО 8423005",
+     unit: "доля", block: economy, log: false, direction: neutral, sectoral: true, note: "ОКВЭД2, с 2017 г."}
+  - {code: lq, name: "Коэффициент локализации (база — параметр lq_base)", formula: "emp_share_k(МО) / emp_share_k(база)",
+     source: "БДПМО 8423005", unit: "раз", block: economy, log: true, direction: neutral, sectoral: true}
+  - {code: lq_ru, name: "Коэффициент локализации (база — Россия)", formula: "emp_share_k(МО) / emp_share_k(Россия)",
+     source: "БДПМО 8423005", unit: "раз", block: economy, log: true, direction: neutral, sectoral: true}
+  - {code: hhi_emp, name: "Индекс Херфиндаля структуры занятости", formula: "Σ_k emp_share_k²",
+     source: "БДПМО 8423005", unit: "индекс", block: economy, log: false, direction: neutral,
+     note: "по опубликованным разделам; скрытые разделы не учтены"}
+  - {code: budget_own_share, name: "Бюджетная самостоятельность", formula: "доля налоговых и неналоговых доходов",
+     source: "БДПМО 8313015/8013015", unit: "%", block: economy, log: false, direction: higher_better}
+  - {code: budget_rev_pc, name: "Доходы местного бюджета на жителя", formula: "доходы / P", source: "БДПМО 8013001",
+     unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true, note: "только до 2020 г."}
+
+  # ---------------------------------------------------------------- социальная сфера и демография
+  - {code: pop, name: "Население на 1 января", formula: "P", source: "БДПМО 8112027 (+8112014, 8112013)",
+     unit: "чел.", block: social, log: true, direction: neutral}
+  - {code: pop_growth, name: "Темп изменения населения за год", formula: "P_t / P_{t−1} − 1", source: "БДПМО",
+     unit: "доля", block: social, log: false, direction: higher_better}
+  - {code: pop_growth_window, name: "Среднегодовой темп изменения населения за окно", formula: "(P_last / P_first)^(1/T) − 1",
+     source: "БДПМО", unit: "доля в год", block: social, log: false, direction: higher_better,
+     note: "одно значение на МО (по всему окну), повторено во всех годах"}
+  - {code: density, name: "Плотность населения", formula: "P / площадь (км²)", source: "БДПМО 8006001",
+     unit: "чел./км²", block: social, log: true, direction: neutral, note: "пропуски площади заполняются ближайшим известным значением того же МО (площадь почти не меняется)"}
+  - {code: housing_pc, name: "Ввод жилья на жителя", formula: "ряд Росстата 8215001", source: "БДПМО 8215001",
+     unit: "м² на жителя", block: social, log: true, direction: higher_better}
+  - {code: retail_pc, name: "Оборот розничной торговли на жителя", formula: "оборот / P", source: "БДПМО 8401003/8201003",
+     unit: "руб. в год", block: social, log: true, direction: higher_better, money: true, note: "без МСП"}
+  - {code: living_space_pc, name: "Жилая площадь на жителя", formula: "ряд Росстата 8211001", source: "БДПМО 8211001",
+     unit: "м²", block: social, log: false, direction: higher_better}
+  # здравоохранение, образование, демография (предложение: 4 показателя с хорошим покрытием)
+  - {code: preschool_coverage, name: "Охват детей 1–6 лет дошкольным образованием", formula: "ряд Росстата 8014006",
+     source: "БДПМО 8014006", unit: "%", block: social, log: false, direction: higher_better}
+  - {code: clinics_per_10k, name: "Лечебно-профилактические организации на 10 тыс. жителей", formula: "организации / P × 10⁴",
+     source: "БДПМО 8018000", unit: "на 10 тыс.", block: social, log: true, direction: higher_better, note: "до 2023 г."}
+  - {code: natural_growth, name: "Естественный прирост на 1000 жителей", formula: "(родившиеся − умершие) / P × 1000",
+     source: "БДПМО 8112003, 8112001", unit: "‰", block: social, log: false, direction: higher_better, note: "до 2023 г."}
+  - {code: old_age_share, name: "Доля населения старше трудоспособного возраста", formula: "P_old / P",
+     source: "БДПМО 8112014", unit: "доля", block: social, log: false, direction: lower_better}
+
+  # ---------------------------------------------------------------- потребление (СберИндекс, 2023–2024)
+  - {code: spend_share, name: "Доля категории в безналичных тратах", formula: "траты категории / все траты",
+     source: "СберИндекс", unit: "доля", block: consumption, log: false, direction: neutral, sectoral: true,
+     note: "категории: food, marketplaces, transport, health, catering, other (= итог − пять категорий)"}
+  - {code: spend_to_wage, name: "Траты к зарплате", formula: "среднемесячные траты на жителя / W", source: "СберИндекс; БДПМО",
+     unit: "доля", block: consumption, log: false, direction: neutral,
+     note: "грубая доля дохода, проходящая через безналичные траты Сбера: нет наличных и трат вне Сбера; траты — на жителя, зарплата — на работника"}
+  - {code: market_access, name: "Индекс доступности рынков (2024)", formula: "Σ_d N_d / τ_od, нормировано 0–1000",
+     source: "СберИндекс", unit: "индекс", block: consumption, log: false, direction: higher_better}
+
+  # ---------------------------------------------------------------- качество данных
+  - {code: gmp_imputed_share, name: "Доля ВМП, распределённая по правилу для скрытых данных", formula: "импутированная ВДС / ВМП",
+     source: "расчёт", unit: "доля", block: quality, log: false, direction: lower_better,
+     note: "мера ненадёжности оценки ВМП; не использовать как признак кластеризации"}
+  - {code: emp_share_unknown, name: "Доля работников вне опубликованных разделов", formula: "1 − Σ_k emp_share_k",
+     source: "БДПМО 8423005", unit: "доля", block: quality, log: false, direction: lower_better}
