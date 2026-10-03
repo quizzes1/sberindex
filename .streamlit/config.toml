@@ -1,0 +1,17 @@
+# Настройки Streamlit (действуют и локально, и в Docker)
+
+[server]
+headless = true
+port = 8501
+fileWatcherType = "none"      # не перечитывать код на сервере
+maxUploadSize = 5             # МБ; интерфейс ничего не загружает
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+
+[runner]
+fastReruns = true

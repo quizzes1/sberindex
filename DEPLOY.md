@@ -1,0 +1,151 @@
+# Развёртывание интерфейса на арендованном сервере
+
+Результат: интерфейс доступен по адресу `https://<ваш-домен>` с входом по логину и паролю.
+Схема: Docker-контейнер с приложением (Streamlit) + Caddy перед ним — он сам получает
+и продлевает HTTPS-сертификат Let's Encrypt и проверяет пароль. Наружу открыты только порты
+80 и 443; порт приложения 8501 в интернет не публикуется.
+
+```
+браузер ──HTTPS──▶ Caddy (80/443, пароль) ──▶ app (Streamlit :8501) ──▶ ./data (данные из репозитория)
+```
+
+Готовые данные для интерфейса (`data/processed`, `data/geo`, `data/networks`, `data/clusters`, ~150 МБ)
+лежат в git-репозитории, поэтому после `git clone` интерфейс работает сразу; пересчитывать конвейер
+на сервере не нужно.
+
+## 1. Какой сервер арендовать
+
+| | минимум | рекомендуется |
+|---|---|---|
+| CPU | 2 vCPU | 4 vCPU |
+| память | 4 ГБ (только выборка ДФО) | **8 ГБ** (выборка «Россия» на странице «Кластеры» требует до 3–4 ГБ) |
+| диск | 20 ГБ SSD | 40 ГБ SSD (если на сервере пересобирать данные: +2 ГБ исходников) |
+| ОС | Ubuntu 22.04 / 24.04 LTS | Ubuntu 24.04 LTS |
+| GPU | не нужен | не нужен |
+
+Подойдёт любой VPS-провайдер. **Если планируете пересобирать данные на сервере**
+(`pipeline`, раздел 7), берите сервер в России: сайты СберИндекса и Росстата бывают недоступны
+или ограничивают запросы с зарубежных адресов. Для работы только интерфейса расположение сервера
+не важно.
+
+При заказе добавьте свой SSH-ключ (на компьютере: `ssh-keygen -t ed25519`, публичный ключ —
+`~/.ssh/id_ed25519.pub`). Запишите IP-адрес сервера.
+
+## 2. Домен
+
+Нужен адрес, по которому Caddy выпустит HTTPS-сертификат:
+
+- **есть домен** — создайте у регистратора A-запись, например `clusters.example.ru → <IP сервера>`;
+- **домена нет** — используйте бесплатный `<IP>.sslip.io` (например, `203.0.113.10.sslip.io`): он
+  сам указывает на этот IP, сертификат выпускается как обычно.
+
+## 3. Первичная настройка сервера
+
+```bash
+ssh root@<IP>
+
+# обновления и пользователь для работы (uid 1000 — под него собран контейнер)
+apt update && apt -y upgrade
+adduser --disabled-password --gecos "" deploy
+usermod -aG sudo deploy
+mkdir -p /home/deploy/.ssh && cp ~/.ssh/authorized_keys /home/deploy/.ssh/ && chown -R deploy: /home/deploy/.ssh
+
+# файрвол: только SSH и веб
+ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable
+
+# Docker и плагин compose (официальный скрипт установки)
+curl -fsSL https://get.docker.com | sh
+usermod -aG docker deploy
+```
+
+Проверьте, что у пользователя `deploy` uid 1000: `id deploy`. Если нет — см. раздел 9 («Permission denied»).
+
+Дальше работаем под `deploy`: `ssh deploy@<IP>`.
+
+## 4. Код и данные
+
+```bash
+git clone https://github.com/quizzes1/sberindex.git
+cd sberindex
+```
+
+Если репозиторий приватный: на GitHub создайте fine-grained токен с правом чтения этого
+репозитория и клонируйте `https://<токен>@github.com/quizzes1/sberindex.git`, либо добавьте
+SSH deploy-ключ сервера в настройки репозитория (Settings → Deploy keys).
+
+## 5. Настройки (.env)
+
+```bash
+cp .env.example .env
+docker run --rm caddy:2 caddy hash-password --plaintext 'придумайте-пароль'   # → строка $2a$14$...
+nano .env
+```
+
+Заполните:
+
+```ini
+DOMAIN=clusters.example.ru            # или 203.0.113.10.sslip.io
+BASIC_AUTH_USER=team
+BASIC_AUTH_HASH='$2a$14$....'         # обязательно в одинарных кавычках
+APP_MEM_LIMIT=6g
+WITH_CANUS=0                          # 1 — включить метод CANUS (PyTorch, образ больше на ~700 МБ)
+```
+
+Один логин и пароль на всю команду. Сменить пароль — новая строка `hash-password` в `.env` и
+`docker compose up -d caddy`.
+
+## 6. Запуск
+
+```bash
+docker compose up -d --build         # первая сборка образа — 5–10 минут
+docker compose ps                    # app — healthy, caddy — running
+docker compose logs -f caddy         # должно появиться "certificate obtained successfully"
+```
+
+Откройте `https://<DOMAIN>`, введите логин и пароль — откроется главная страница интерфейса.
+
+## 7. Обычные операции
+
+| задача | команда |
+|---|---|
+| обновить код после изменений в репозитории | `git pull && docker compose up -d --build` |
+| перезапустить интерфейс | `docker compose restart app` |
+| посмотреть логи | `docker compose logs -f app` |
+| остановить всё | `docker compose down` |
+| пересобрать данные с нуля (качает ~1,5 ГБ, 15–60 мин) | `docker compose --profile pipeline run --rm pipeline` затем `docker compose restart app` |
+| пересобрать данные, не скачивая заново | `docker compose --profile pipeline run --rm pipeline python scripts/run_all.py --skip-download --quick` |
+
+Что интерфейс записывает на диск (это и стоит сохранять в резервной копии):
+
+- `data/cluster_names.yaml` — названия типов, которые аналитики задали на странице «Кластеры»;
+- `data/networks/<хэш>/` — сети, сохранённые кнопкой на странице «Сеть».
+
+Простая резервная копия раз в сутки (под `deploy`, `crontab -e`):
+
+```cron
+0 3 * * * tar czf ~/backup-$(date +\%F).tgz -C ~/sberindex data/cluster_names.yaml data/networks && find ~ -name 'backup-*.tgz' -mtime +14 -delete
+```
+
+## 8. Безопасность
+
+- Наружу открыты только 80 (редирект на HTTPS) и 443; Streamlit (8501) доступен только Caddy
+  внутри сети Docker.
+- Вход — HTTP Basic Auth поверх HTTPS: пароль не передаётся открытым текстом. Пароль хранится только
+  в виде bcrypt-хэша в `.env`; сам файл `.env` не попадает ни в git, ни в образ (он в `.gitignore`
+  и `.dockerignore`).
+- Контейнер с приложением работает от непривилегированного пользователя (uid 1000).
+- Обновляйте систему: `sudo apt update && sudo apt -y upgrade`; образ Caddy — `docker compose pull caddy && docker compose up -d caddy`.
+- Внешние методы KEFRiN/CANUS клонируются при сборке образа и в репозиторий не попадают
+  (у их репозиториев нет файла лицензии) — образ не стоит публиковать в открытых реестрах.
+
+## 9. Если что-то не работает
+
+| симптом | причина и решение |
+|---|---|
+| `502 Bad Gateway` сразу после запуска | приложение ещё стартует (до ~40 с) — `docker compose ps`, дождитесь `healthy` |
+| сертификат не выпускается (`docker compose logs caddy`) | A-запись ещё не обновилась (проверьте `dig +short <домен>`), или закрыт порт 80 у провайдера/в `ufw` |
+| страница открылась без пароля / пароль не принимается | хэш в `.env` без одинарных кавычек — символы `$` съедаются; пересоздайте строку |
+| `Permission denied` при сохранении названий типов или сети | папка `data` принадлежит не uid 1000: `sudo chown -R 1000:1000 ~/sberindex/data` |
+| страница «Кластеры» на выборке «Россия» падает или перезапускает контейнер | не хватает памяти: увеличьте `APP_MEM_LIMIT` и/или память сервера (рекомендуется 8 ГБ) |
+| `pipeline` не может скачать данные СберИндекса/Росстата | сайты ограничивают зарубежные адреса или частоту запросов: повторите позже или пересоберите данные локально и закоммитьте `data/processed`, `data/geo`, `data/networks`, `data/clusters` |
+| в списке методов нет CANUS | собран без PyTorch: `WITH_CANUS=1` в `.env`, затем `docker compose build --no-cache app && docker compose up -d` |

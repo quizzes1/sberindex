@@ -10,6 +10,9 @@ python scripts/run_all.py             # весь конвейер с нуля (�
 streamlit run app/Home.py             # интерфейс аналитиков
 ```
 
+Развёртывание на сервере (Docker + HTTPS + вход по паролю): **[DEPLOY.md](DEPLOY.md)** —
+`cp .env.example .env && docker compose up -d --build`.
+
 ## Где что лежит
 
 ```

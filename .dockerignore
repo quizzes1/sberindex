@@ -1,0 +1,14 @@
+# В образ — только код и конфиги; данные подключаются томом ./data (см. docker-compose.yml)
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+data/
+external/
+certs/ca-bundle.pem
+notebooks/.ipynb_checkpoints
+*.log
+.env
+reports/*.docx

@@ -1,0 +1,51 @@
+# Развёртывание на сервере (см. DEPLOY.md):
+#   cp .env.example .env    # домен, логин и хэш пароля
+#   docker compose up -d --build
+# Пересборка данных с нуля (качает ~1,5 ГБ исходников, 15–60 мин):
+#   docker compose --profile pipeline run --rm pipeline
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        WITH_CANUS: "${WITH_CANUS:-0}"
+    image: sberindex-clusters:latest
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data          # готовые данные из репозитория; сюда же сохраняются названия типов и сети
+      - ./configs:/app/configs:ro # параметры по умолчанию можно менять без пересборки образа
+    expose:
+      - "8501"                    # наружу не публикуется — только через Caddy
+    mem_limit: "${APP_MEM_LIMIT:-6g}"
+    environment:
+      - PYTHONIOENCODING=utf-8
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?укажите DOMAIN в .env}
+      - BASIC_AUTH_USER=${BASIC_AUTH_USER:?укажите BASIC_AUTH_USER в .env}
+      - BASIC_AUTH_HASH=${BASIC_AUTH_HASH:?укажите BASIC_AUTH_HASH в .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # сертификаты Let's Encrypt
+      - caddy_config:/config
+
+  # Полный конвейер данных: download → panel → ГМП → показатели → сети → кластеры → динамика → конвергенция
+  pipeline:
+    profiles: ["pipeline"]
+    image: sberindex-clusters:latest
+    volumes:
+      - ./data:/app/data
+    command: ["python", "scripts/run_all.py", "--quick"]
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,19 @@
+# Обратный прокси перед Streamlit: автоматический HTTPS (Let's Encrypt) и вход по логину/паролю.
+# Переменные берутся из .env (см. .env.example).
+{$DOMAIN} {
+	encode zstd gzip
+
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	# Streamlit работает через WebSocket — Caddy проксирует его без доп. настроек
+	reverse_proxy app:8501
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+}
