@@ -10,6 +10,7 @@
   data/processed/rejected.csv         отбракованные заведомо ошибочные значения (например, население = 0)
   data/geo/mo.gpkg                    полные полигоны + атрибуты
   data/geo/mo_simplified.geojson      упрощённые полигоны для карты (долготы 0…360)
+  data/geo/mo_simplified_coarse.geojson  сильнее упрощённые — для карты всей России
   data/geo/adjacency.parquet          пары смежных МО (общая граница, допуск 200 м, с учётом 180-го меридиана)
 """
 
@@ -62,6 +63,11 @@ def main() -> int:
     if out.exists():
         out.unlink()
     simp.to_file(out, driver="GeoJSON")
+    # облегчённый слой для карты всей России (~2,7 МБ вместо ~5,3 МБ)
+    coarse = GEO / "mo_simplified_coarse.geojson"
+    if coarse.exists():
+        coarse.unlink()
+    geo.simplified(full, tolerance=0.03).to_file(coarse, driver="GeoJSON")
     geo.adjacency(polys).to_parquet(GEO / "adjacency.parquet", index=False)
 
     # краткая сводка

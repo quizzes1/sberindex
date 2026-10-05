@@ -182,3 +182,29 @@ def clubs(L: pd.DataFrame, trim: float = 0.3, hp_lambda: float = 400, crit: floa
         cid += 1
         rest = [i for i in rest if i not in members]
     return club
+
+
+# ============================================================================ ряды
+def load_series(spec: dict, active_ids, price_params: dict | None = None) -> pd.DataFrame:
+    """territory_id, year, value для ряда конвергенции (configs/dynamics.yaml → convergence.series).
+
+    Только МО из active_ids, действующие в году или достроенные. Денежный ряд — всегда в ценах базового
+    года (price_params; по умолчанию — configs/indicators.yaml → params.prices), даже если в интерфейсе
+    выбраны текущие цены: конвергенция по номинальным значениям смешивает инфляцию с ростом.
+    """
+    from src import prices
+    from src.io import PROCESSED
+
+    col = spec["column"]
+    keep = ["territory_id", "year", col, "valid_in_year", "derived"]
+    if spec["source"] == "gmp":
+        g = pd.read_parquet(PROCESSED / "gmp.parquet")
+        d = g[g["method"].eq(spec["method"])][keep + ["region_code"]]
+    else:
+        d = pd.read_parquet(PROCESSED / "indicators_wide.parquet", columns=keep + ["region_code"])
+    if spec.get("years"):
+        d = d[d["year"].between(*spec["years"])]
+    d = d[(d["valid_in_year"] | d["derived"]) & d["territory_id"].isin(set(active_ids))]
+    pp = prices.price_params(price_params)
+    d = prices.to_real(d, [col], pp["base_year"], pp["deflator_scope"], bool(pp["spatial_price_adjustment"]))
+    return d.rename(columns={col: "value"})[["territory_id", "year", "value"]].dropna().reset_index(drop=True)

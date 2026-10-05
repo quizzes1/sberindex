@@ -20,7 +20,7 @@ import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 import yaml  # noqa: E402
 
-from src import network  # noqa: E402
+from src import network, prices, update  # noqa: E402
 from src.io import DATA, GEO, PROCESSED, load_yaml  # noqa: E402
 
 # ---------------------------------------------------------------- палитры (руководство dataviz, проверенный набор)
@@ -72,9 +72,18 @@ def panel_long() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def geojson() -> dict:
-    with open(GEO / "mo_simplified.geojson", encoding="utf-8") as f:
+def geojson(coarse: bool = False) -> dict:
+    """Полигоны для карт: детальные (допуск 0,01°) или облегчённые для всей России (0,03°)."""
+    name = (
+        "mo_simplified_coarse.geojson"
+        if coarse and (GEO / "mo_simplified_coarse.geojson").exists()
+        else "mo_simplified.geojson"
+    )
+    with open(GEO / name, encoding="utf-8") as f:
         return json.load(f)
+
+
+COARSE_FROM = 800  # с какого числа МО на карте брать облегчённые полигоны
 
 
 def regions_table() -> pd.DataFrame:
@@ -83,15 +92,39 @@ def regions_table() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------- боковая панель
+_SEEN_UPDATE = {"finished": None, "first": True}  # общий для процесса Streamlit (модуль импортируется один раз)
+
+
+def refresh_after_update() -> dict:
+    """После пересчёта со страницы «Обновление данных» один раз сбросить кэши (st.cache_data и lru_cache в src),
+    чтобы все страницы читали новые файлы. Возвращает состояние последнего пересчёта."""
+    stt = update.read_status()
+    fin = stt.get("finished") if stt.get("state") == "done" else None
+    if fin and fin != _SEEN_UPDATE["finished"]:
+        if not _SEEN_UPDATE["first"]:
+            st.cache_data.clear()
+            update.clear_caches()
+        _SEEN_UPDATE["finished"] = fin
+    _SEEN_UPDATE["first"] = False
+    return stt
+
+
 def sidebar() -> dict:
     """Общие настройки для всех страниц; хранятся в st.session_state."""
     s = st.session_state
+    upd = refresh_after_update()
+    if upd.get("state") == "running":
+        st.sidebar.warning(
+            "Идёт пересчёт данных (страница «Обновление данных»): пока он не закончится, результаты могут быть неполными."
+        )
     st.sidebar.header("Выборка и предобработка")
-    kind = st.sidebar.radio(
+    options = ["Россия", *FDS, "Свой список субъектов"]  # вся Россия по умолчанию; округа — пресеты
+    kind = st.sidebar.selectbox(
         "Выборка",
-        ["ДФО", "Россия", "Свой список субъектов"],
-        index=["ДФО", "Россия", "Свой список субъектов"].index(s.get("sample_kind", "ДФО")),
+        options,
+        index=options.index(s.get("sample_kind", "Россия")) if s.get("sample_kind", "Россия") in options else 0,
         key="sample_kind",
+        format_func=lambda x: "Вся Россия" if x == "Россия" else x,
     )
     regions: list[int] = []
     if kind == "Свой список субъектов":
@@ -122,8 +155,47 @@ def sidebar() -> dict:
             "⚠️ При нормировке по годам общий рост показателей исчезает, и «переходы» между "
             "кластерами во времени отчасти становятся артефактом нормировки."
         )
+    st.sidebar.header("Цены")
+    pdef = prices.price_params()
+    values = st.sidebar.radio(
+        "Денежные показатели",
+        ["real", "nominal"],
+        index=["real", "nominal"].index(s.get("price_values", pdef["values"])),
+        key="price_values",
+        horizontal=True,
+        format_func={"real": "в ценах базового года", "nominal": "в текущих ценах"}.get,
+    )
+    years_b = list(range(2013, 2025))
+    base_year = st.sidebar.selectbox(
+        "Базовый год цен",
+        years_b,
+        index=years_b.index(s.get("price_base_year", pdef["base_year"])),
+        key="price_base_year",
+        disabled=values == "nominal",
+    )
+    dscope = st.sidebar.selectbox(
+        "Индексы цен",
+        ["national", "regional"],
+        index=["national", "regional"].index(s.get("price_scope", pdef["deflator_scope"])),
+        key="price_scope",
+        disabled=values == "nominal",
+        format_func={"national": "по России (точные среднегодовые)", "regional": "по субъектам (приближённо)"}.get,
+    )
+    spatial = st.sidebar.checkbox(
+        "Поправка на межрегиональные различия цен",
+        value=s.get("price_spatial", bool(pdef["spatial_price_adjustment"])),
+        key="price_spatial",
+        disabled=values == "nominal",
+        help="Делит потребительские суммы (зарплата, ФОТ, бюджет, розница) на стоимость фиксированного набора "
+        "товаров и услуг в субъекте относительно России.",
+    )
+    if values == "nominal":
+        st.sidebar.caption(
+            "⚠️ Текущие цены: сравнение лет искажено инфляцией. Конвергенция всегда считается в реальных."
+        )
     st.sidebar.caption("ВМП — расчётная оценка команды, не официальная статистика.")
-    fds = FDS if kind == "Россия" else (["ДФО"] if kind == "ДФО" else [])
+    # [] — вся Россия (как в configs/network.yaml, чтобы хэш совпадал с готовыми результатами)
+    fds = [kind] if kind in FDS else []
     return {
         "kind": kind,
         "federal_districts": fds,
@@ -132,17 +204,48 @@ def sidebar() -> dict:
         "exclude_boundary_change": bool(excl),
         "method": method,
         "scope": scope,
+        "prices": {
+            "values": values,
+            "base_year": int(base_year),
+            "deflator_scope": dscope,
+            "spatial_price_adjustment": bool(spatial),
+        },
     }
+
+
+def real_prices(side: dict) -> dict:
+    """Параметры цен для расчётов, которые всегда в реальных ценах (конвергенция)."""
+    return {**side["prices"], "values": "real"}
+
+
+def to_view(df: pd.DataFrame, codes, side: dict, force_real: bool = False) -> pd.DataFrame:
+    """Денежные колонки codes в ценах, выбранных в боковой панели (df — с колонками region_code, year)."""
+    pr = real_prices(side) if force_real else side["prices"]
+    if pr["values"] == "nominal":
+        return df
+    return prices.to_real(df, codes, pr["base_year"], pr["deflator_scope"], pr["spatial_price_adjustment"])
+
+
+def unit_label(code: str, side: dict, force_real: bool = False) -> str:
+    """Единица показателя с подписью цен: «руб., в ценах 2023 г.»."""
+    reg = registry().set_index("code")
+    if code not in reg.index:
+        return ""
+    r = reg.loc[code]
+    mon = bool(r.get("monetary")) if "monetary" in reg.columns and pd.notna(r.get("monetary")) else False
+    pr = real_prices(side) if force_real else side["prices"]
+    return prices.unit_label(str(r["unit"]), mon, pr)
 
 
 def sample_ids(side: dict) -> set[int]:
     """territory_id выборки (по ФО или субъектам, с учётом исключения смен границ)."""
     m = mo()
-    sel = (
-        m["region_code"].isin(side["regions"])
-        if side["regions"]
-        else m["federal_district"].isin(side["federal_districts"])
-    )
+    if side["regions"]:
+        sel = m["region_code"].isin(side["regions"])
+    elif side["federal_districts"]:
+        sel = m["federal_district"].isin(side["federal_districts"])
+    else:
+        sel = pd.Series(True, index=m.index)  # вся Россия
     if side["exclude_boundary_change"]:
         sel &= ~m["boundary_change"]
     return set(m.loc[sel, "territory_id"].astype(int))
@@ -168,6 +271,7 @@ def network_params(side: dict, override: dict | None = None) -> dict:
                 "exclude_boundary_change": side["exclude_boundary_change"],
             },
             "preprocess": {"method": side["method"], "scope": side["scope"]},
+            "prices": side["prices"],
         },
     )
     return network.merge_params(p, override or {})
@@ -230,8 +334,9 @@ def geo_layout(fig: go.Figure, ids: set[int], height: int = 620) -> go.Figure:
     return fig
 
 
-def features_subset(ids: set[int]) -> dict:
-    g = geojson()
+def features_subset(ids: set[int], coarse: bool | None = None) -> dict:
+    """Полигоны МО из ids. coarse=None — облегчённые, если МО больше COARSE_FROM."""
+    g = geojson(len(ids) > COARSE_FROM if coarse is None else coarse)
     return {
         "type": "FeatureCollection",
         "features": [f for f in g["features"] if int(f["properties"]["territory_id"]) in ids],
@@ -280,10 +385,10 @@ def cluster_map(labels: pd.Series, names: dict | None = None, title: str = "") -
     ids = set(int(i) for i in labels.index)
     for k in sorted(labels.unique()):
         sel = labels[labels.eq(k)]
-        lab = (names or {}).get(int(k)) or f"Тип {k}"
+        lab = (names or {}).get(int(k)) or f"K{int(k) + 1}"
         fig.add_trace(
             go.Choropleth(
-                geojson=features_subset(set(int(i) for i in sel.index)),
+                geojson=features_subset(set(int(i) for i in sel.index), coarse=len(ids) > COARSE_FROM),
                 featureidkey="properties.territory_id",
                 locations=list(sel.index),
                 z=[1] * len(sel),
@@ -342,7 +447,7 @@ def graph_on_map(edges: pd.DataFrame, labels: pd.Series | None = None, title: st
                     lat=m.loc[sel, "lat"],
                     lon=m.loc[sel, "lon"],
                     mode="markers",
-                    name=f"Тип {k}",
+                    name=f"K{int(k) + 1}",
                     marker=dict(size=8, color=cluster_color(int(k)), line=dict(width=1, color="white")),
                     text=m.loc[sel, "name"],
                     hovertemplate="%{text}<br>Тип " + str(k) + "<extra></extra>",
@@ -387,7 +492,7 @@ def graph_force(edges: pd.DataFrame, labels: pd.Series | None = None, seed: int 
                 x=[pos[n][0] for n in nodes],
                 y=[pos[n][1] for n in nodes],
                 mode="markers",
-                name="МО" if k is None else f"Тип {k}",
+                name="МО" if k is None else f"K{int(k) + 1}",
                 showlegend=k is not None,
                 marker=dict(
                     size=8,

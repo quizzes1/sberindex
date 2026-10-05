@@ -5,8 +5,9 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from common import SEQUENTIAL, downloads, indicators_wide, layout, mo, registry, sample_ids, sidebar
+from common import CATEGORICAL, SEQUENTIAL, downloads, indicators_wide, layout, mo, registry, sample_ids, sidebar
 
+from src import prices
 from src.io import PROCESSED, RAW, load_yaml
 
 st.set_page_config(page_title="Данные и качество", layout="wide")
@@ -18,7 +19,7 @@ reg = registry()
 ids = sample_ids(side)
 y0, y1 = side["years"]
 d = w[w["valid_in_year"] & w["territory_id"].isin(ids) & w["year"].between(y0, y1)]
-base = reg[~reg["code"].str.contains(r"_cpi$|^emp_share_|^lq_|^gmp_structure_|^spend_share_", regex=True)]
+base = reg[~reg["code"].str.contains(r"^emp_share_|^lq_|^gmp_structure_|^spend_share_", regex=True)]
 codes = [c for c in base["code"] if c in d]
 names = reg.set_index("code")["name"]
 
@@ -55,6 +56,44 @@ fig = go.Figure(
     )
 )
 st.plotly_chart(layout(fig, 20 * len(byreg) + 80, xaxis_title="% МО с данными"), width="stretch")
+
+st.subheader("Покрытие: показатель × субъект, % МО с данными за окно")
+reg_cov = (
+    d.assign(region=d["territory_id"].map(m["region_name"]))
+    .groupby("region")[codes]
+    .apply(lambda x: x.notna().mean() * 100)
+).T
+order = sorted(reg_cov.columns, key=lambda r: (m.loc[m["region_name"].eq(r), "federal_district"].iloc[0], r))
+reg_cov = reg_cov[order]
+fig = go.Figure(
+    go.Heatmap(
+        z=reg_cov.values,
+        x=reg_cov.columns,
+        y=[names.get(c, c) for c in reg_cov.index],
+        colorscale=[[i / (len(SEQUENTIAL) - 1), c] for i, c in enumerate(SEQUENTIAL)],
+        zmin=0,
+        zmax=100,
+        hovertemplate="%{y}<br>%{x}: %{z:.0f}%<extra></extra>",
+        colorbar=dict(title="%", thickness=12),
+    )
+)
+fig.update_xaxes(tickangle=-60, tickfont=dict(size=9))
+st.plotly_chart(layout(fig, 26 * len(codes) + 220), width="stretch")
+st.caption(
+    f"Субъекты упорядочены по федеральным округам; окно {y0}–{y1}, только МО выборки, действующие в году. Пропуск ≠ "
+    "ноль: скрытые Росстатом значения не заполняются. Полный разбор — reports/DATA_GAPS.md."
+)
+
+st.subheader("Сверка с признаками научной работы-образца")
+sc_path = PROCESSED / "sample_comparison.csv"
+if sc_path.exists():
+    st.dataframe(pd.read_csv(sc_path), width="stretch", hide_index=True)
+    st.caption(
+        "Проверено по перечню 603 показателей БДПМО (tochno.st) и архиву хакатона СберИндекса. Чего нет на уровне МО — "
+        "так и указано; замены — только из тех же источников. Покрытие — по всей России, 2017–2024."
+    )
+else:
+    st.caption("Нет файла сверки — запустите scripts/build_data_gaps.py.")
 
 st.subheader("МО с пропусками")
 sel = st.multiselect(
@@ -108,4 +147,40 @@ st.markdown(
     "доходы местных бюджетов после 2020 г.; занятость и оборот малого бизнеса по МО за всё окно.\n"
     f"- Неудачных загрузок: {len(failed.splitlines()) if failed else 0}."
 )
+
+st.subheader("Индексы цен и дефляторы")
+pr = side["prices"]
+st.markdown(
+    f"Денежные показатели хранятся в текущих ценах и пересчитываются в цены **{pr['base_year']} г.**: "
+    "real_t = nominal_t × L_base / L_t (`src/prices.py`). Дефлятор показателя — поле `deflator` реестра: "
+    "ИПЦ — зарплата, ФОТ, доходы бюджета, розница; дефлятор ВРП — ВМП; индекс цен инвестиционной продукции — "
+    "инвестиции; индексы цен производителей — отгрузка (промышленность, обрабатывающие), продукция сельского хозяйства."
+)
+lv = prices.levels()
+ru = lv[lv["region_code"].eq(prices.RUSSIA)].pivot(index="year", columns="deflator", values="level")
+gr = (ru / ru.shift(1) * 100).loc[2013:]
+fig = go.Figure()
+for i, c in enumerate([c for c in prices.DEFLATORS if c in gr]):
+    fig.add_trace(
+        go.Scatter(
+            x=gr.index,
+            y=gr[c],
+            name=prices.DEFLATORS[c],
+            mode="lines+markers",
+            line=dict(color=CATEGORICAL[i], width=2),
+            hovertemplate="%{x}: %{y:.1f}%<extra>" + prices.DEFLATORS[c] + "</extra>",
+        )
+    )
+st.plotly_chart(
+    layout(fig, 340, title="Индексы цен по России, в среднем за год к предыдущему году, %"), width="stretch"
+)
+ft = prices.coverage_table(pr["base_year"], pr["deflator_scope"])
+ft = ft.pivot_table(index="дефлятор", columns="источник", values="n", fill_value=0)
+st.caption(
+    "Откуда взят коэффициент (число лет × субъектов"
+    + (")." if pr["deflator_scope"] == "regional" else "; по России — число лет).")
+    + " «Продлено темпами ИПЦ» и «общероссийский» — отметки о подстановке, а не пропуски."
+)
+st.dataframe(ft, width="stretch")
+
 downloads(cov.reset_index().rename(columns={"index": "показатель"}), {"боковая_панель": side}, "data_quality")

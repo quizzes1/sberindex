@@ -8,3 +8,4 @@ certs/ca-bundle.pem
 external/
 .env
 data/*.log
+data/update/

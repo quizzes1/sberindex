@@ -13,6 +13,13 @@
 | `data/processed/mo.parquet` | справочник МО: последние название/тип/ОКТМО, `oktmo_history` (все ОКТМО по годам), регион, ФО, `is_dfo`, статус (ЗАТО, центр субъекта), центр и координаты, `boundary_change`, `boundary_events`, число лет с данными по ключевым рядам (`years_*`) |
 | `data/processed/unmatched.csv` | строки источников, которые не удалось привязать к `territory_id`, с причиной |
 | `data/processed/rejected.csv` | отбракованные заведомо ошибочные значения |
+| `data/processed/price_levels.parquet` | уровни цен (`src/prices.py`): `region_code` (0 — Россия), `year`, `deflator` (cpi, grp, invest, ppi_industry, ppi_manufacturing, ppi_agri), `level` — среднегодовой уровень (база произвольная), `flag` — способ расчёта |
+| `data/processed/summary_table1.csv`, `summary_table1.xlsx` | таблица 1 «Характерные признаки кластеров» для разбиения по умолчанию (`scripts/build_summary.py`); xlsx — с цветами кластеров и матрицей «кластер × признак» |
+| `data/processed/summary_table2_mo.csv`, `summary_table2.xlsx`, `summary_table2_print.html` | таблица 2 «Результаты кластеризации по периодам» для разбиения по умолчанию: уровень МО (CSV), Excel с цветами (МО, субъекты по числу МО и по населению, переходы), страница для печати (субъекты и переходы) |
+| `data/update/status.json`, `data/update/run.log` | состояние и журнал последнего пересчёта со страницы «Обновление данных» (вне git) |
+| `data/cluster_descriptions.yaml` | описания кластеров, исправленные аналитиками (ключ — сеть, метод, k, режим, год; при каждом тексте — отпечаток состава кластера) |
+| `data/processed/price_basket.parquet` | стоимость фиксированного набора товаров и услуг субъекта относительно России (`basket_rel`, Россия = 1, на конец года) — для межрегиональной поправки |
+| `data/raw/rosstat/prices/` | индексы цен Росстата: ИПЦ по России помесячно (`ipc_mes.xlsx`), ИПЦ по субъектам декабрь к декабрю (`ipc_s_1992-2025.xlsx`), индекс цен инвестиционной продукции (`Invest_ind_svodn.xlsx`), индексы цен производителей по видам деятельности (`Proizvoditeli_Ind_VED.xlsx`); региональные ИЦП, цены сельхозпроизводителей и фикс. набор — из сборника «Регионы России» (tochno.st) |
 | `data/geo/mo.gpkg` | полные полигоны СберИндекса (EPSG:4326, исходные долготы) + атрибуты |
 | `data/geo/mo_simplified.geojson` | упрощённые полигоны для карты (допуск 0,01°), **долготы 0…360** |
 

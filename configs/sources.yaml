@@ -64,6 +64,25 @@ rosstat:
     url: https://rosstat.gov.ru/storage/mediabank/ponyatiya-i-opredeleniya-vgp.pdf
     dest: rosstat/ponyatiya-i-opredeleniya-vgp.pdf
     note: "Методика ВГП Росстата"
+  # --- индексы цен (этап 3 доработки): по России помесячно → индексы «в среднем за год к предыдущему году»;
+  #     по субъектам — «декабрь к декабрю» (ИПЦ до 2025 г.). Имена файлов Росстат меняет с каждым выпуском —
+  #     при ошибке загрузки найдите актуальное имя на https://rosstat.gov.ru/statistics/price
+  - id: cpi_rf_monthly
+    url: https://rosstat.gov.ru/storage/mediabank/ipc_mes_08-2026.xlsx
+    dest: rosstat/prices/ipc_mes.xlsx
+    note: "ИПЦ по России помесячно (к предыдущему месяцу), 1991–2026"
+  - id: cpi_regions_dec
+    url: https://rosstat.gov.ru/storage/mediabank/ipc_s_1992-2025.xlsx
+    dest: rosstat/prices/ipc_s_1992-2025.xlsx
+    note: "ИПЦ по субъектам, декабрь к декабрю, 1992–2025"
+  - id: invest_prices_rf
+    url: https://rosstat.gov.ru/storage/mediabank/Invest_ind_svodn_08-2026.xlsx
+    dest: rosstat/prices/Invest_ind_svodn.xlsx
+    note: "Сводный индекс цен на продукцию инвестиционного назначения по России помесячно, 1995–2025"
+  - id: ppi_rf_ved
+    url: https://rosstat.gov.ru/storage/mediabank/Proizvoditeli_Ind_VED_08-2026.xlsx
+    dest: rosstat/prices/Proizvoditeli_Ind_VED.xlsx
+    note: "Индексы цен производителей по видам деятельности по России помесячно, 2013–2025"
   - id: msp_in_gdp
     url: https://rosstat.gov.ru/storage/mediabank/MSP_v_VVP_s2017.xlsx
     dest: rosstat/MSP_v_VVP_s2017.xlsx
@@ -143,3 +162,4 @@ tochno_bdmo:
     - {code: 9010003, section: 39, role: "число ИП, 2023+", period: "На 1 января"}
     - {code: 7000005, section: 46, role: "выручка по бухотчётности (вкл. МСП?), 2021–2023"}
     - {code: 8942001, section: 42, role: "прибыль до налогообложения", total: {okfs: ["Всего (ГД-ПТК)"]}}
+    - {code: 8942010, section: 42, role: "число организаций, представивших отчёт, по разделам ОКВЭД2 (без МСП)", total: {okfs: ["Всего (ГД-ПТК)"]}}

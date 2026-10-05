@@ -61,6 +61,7 @@ series:
   - {id: n_ip, codes: [9010003], agg: sum}
   - {id: revenue_bo, codes: [7000005], agg: sum}
   - {id: profit, codes: [8942001], agg: sum}
+  - {id: n_orgs_rep, codes: [8942010], agg: sum, sectoral: true}   # организации, представившие отчёт (без МСП), по разделам ОКВЭД2
 
 # Безналичные траты СберИндекса: категория → код
 sber_categories:

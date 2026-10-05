@@ -5,7 +5,19 @@ from __future__ import annotations
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
-from common import CATEGORICAL, DIVERGING, choropleth, downloads, layout, mo, registry, sample_rows, sidebar
+from common import (
+    CATEGORICAL,
+    DIVERGING,
+    choropleth,
+    downloads,
+    layout,
+    mo,
+    registry,
+    sample_rows,
+    sidebar,
+    to_view,
+    unit_label,
+)
 
 from src.normalize import prepare
 
@@ -15,6 +27,7 @@ st.title("Показатели")
 
 reg = registry().set_index("code")
 rows = sample_rows(side)
+rows = to_view(rows, list(rows.columns), side)  # денежные — в ценах из боковой панели
 blocks = {
     "economy": "экономика",
     "social": "социальная сфера",
@@ -23,15 +36,15 @@ blocks = {
 }
 c1, c2 = st.columns([1, 3])
 blk = c1.multiselect("Блоки", list(blocks), default=["economy", "social"], format_func=blocks.get)
-hide = c1.checkbox("Скрыть отраслевые и «_cpi»", value=True)
+hide = c1.checkbox("Скрыть отраслевые", value=True)
 avail = [c for c in reg.index if c in rows and reg.at[c, "block"] in blk]
 if hide:
-    avail = [c for c in avail if not c.endswith("_cpi") and reg.at[c, "parent"] == c]
+    avail = [c for c in avail if reg.at[c, "parent"] == c]
 default = [
     c
     for c in [
         "gmp_pc",
-        "wage_real",
+        "wage",
         "invest_pc_nobudget",
         "hhi_emp",
         "density",
@@ -48,8 +61,9 @@ if not sel:
 with st.expander("Описание выбранных показателей", expanded=False):
     t = reg.loc[sel, ["name", "formula", "unit", "source", "block", "log", "direction", "note"]].reset_index()
     t["block"] = t["block"].map(blocks)
+    t["unit"] = [unit_label(c, side) for c in sel]
     st.dataframe(t, width="stretch")
-if "gmp_pc" in sel or "gmp_pc_real" in sel:
+if "gmp_pc" in sel:
     st.caption(
         "ВМП — расчётная оценка команды (не официальная статистика). Для 2013–2016 гг. — базовый метод "
         "(колонка gmp_method_used), с 2017 г. — отраслевой."
@@ -70,7 +84,7 @@ fa = go.Figure(
         hovertemplate="%{x}: %{y} МО-лет<extra></extra>",
     )
 )
-a.plotly_chart(layout(fa, 300, title=f"Исходные, {reg.at[ind, 'unit']}", bargap=0.06), width="stretch")
+a.plotly_chart(layout(fa, 300, title=f"Исходные, {unit_label(ind, side)}", bargap=0.06), width="stretch")
 fb = go.Figure(
     go.Histogram(
         x=Z[ind].dropna(),
@@ -131,7 +145,8 @@ y0, y1 = side["years"]
 yr = st.select_slider("Год", list(range(y0, y1 + 1)), value=y1)
 v = rows[rows["year"].eq(yr)].set_index("territory_id")[ind]
 st.plotly_chart(
-    choropleth(v, f"{reg.at[ind, 'name']}, {yr} ({reg.at[ind, 'unit']})", log=bool(reg.at[ind, "log"])), width="stretch"
+    choropleth(v, f"{reg.at[ind, 'name']}, {yr} ({unit_label(ind, side)})", log=bool(reg.at[ind, "log"])),
+    width="stretch",
 )
 
 st.subheader("Таблица")

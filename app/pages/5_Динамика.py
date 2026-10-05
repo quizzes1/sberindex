@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from common import (
     CATEGORICAL,
+    COARSE_FROM,
     OTHER_GRAY,
     cluster_color,
     clustering_cfg,
@@ -30,6 +31,7 @@ st.title("Динамика типов")
 
 cc = clustering_cfg()
 dc = load_yaml("dynamics.yaml")
+METHOD_LABELS = {"ward": "Уорд", "ward_kmeans": "Уорд + k-means", "kmeans": "k-средних", "gmm": "гауссовы смеси"}
 override = st.session_state.get("net_override", {})
 params = network_params(side, override)
 if "features" in override:
@@ -45,11 +47,15 @@ mode = c1.selectbox(
 pool_methods = [m for m in cc["methods"] if clustering.FAMILIES[m] == "attributes"]
 all_methods = [m for m in cc["methods"] if clustering.available(m)[0] and m != "canus"]
 methods = pool_methods if mode == "pooled" else all_methods
+default_m = dc["partition"]["method"] if mode == "pooled" else ("kefrin" if "kefrin" in methods else methods[0])
 method = c2.selectbox(
-    "Метод", methods, index=0 if mode == "pooled" else methods.index("kefrin") if "kefrin" in methods else 0
+    "Метод",
+    methods,
+    index=methods.index(default_m) if default_m in methods else 0,
+    format_func=lambda m: METHOD_LABELS.get(m, m),
 )
 k = c3.slider("k", 2, 10, dc["partition"]["k"])
-thr = c4.slider("Порог Жаккара для сопоставления", 0.0, 0.9, float(dc["matching"]["min_jaccard"]), 0.05)
+thr = c4.slider("Порог Жаккара (режим «каждый год заново»)", 0.0, 0.9, float(dc["matching"]["min_jaccard"]), 0.05)
 st.caption(
     "Режим «одна модель на всю панель» — решение команды: типы общие для всех лет, и смена типа означает "
     "изменение показателей МО, а не перекластеризацию года (при «каждый год заново» заметная часть переходов — шум)."
@@ -71,7 +77,8 @@ def partition(pj: str, mode: str, method: str, k: int) -> pd.DataFrame:
 
 
 lab = partition(pj, mode, method, k)
-th = dynamics.match_years(lab, thr)
+# сквозные типы K1…Kn: 0 → K1 — самый высокий ВМП на душу в ценах базового года
+th = dynamics.through_labels(lab, mode, thr, params["prices"])
 st.session_state["types_last"] = th[th["year"].eq(th["year"].max())].set_index("territory_id")["through"].to_dict()
 summ = dynamics.year_summary(th)
 tr = dynamics.transitions(th)
@@ -87,11 +94,11 @@ fig = go.Figure(
     go.Sankey(
         arrangement="snap",
         node=dict(
-            label=[f"{t}" for _, t in nodes],
+            label=[clustering.code(t) for _, t in nodes],
             color=[cluster_color(int(t)) for _, t in nodes],
             pad=8,
             thickness=14,
-            customdata=[f"{y}: тип {t}, {cnt[(y, t)]} МО" for y, t in nodes],
+            customdata=[f"{y}: {clustering.code(t)}, {cnt[(y, t)]} МО" for y, t in nodes],
             hovertemplate="%{customdata}<extra></extra>",
             x=[(years.index(y)) / max(len(years) - 1, 1) * 0.98 + 0.01 for y, _ in nodes],
         ),
@@ -100,7 +107,7 @@ fig = go.Figure(
             target=[idx[(r.year_to, r["to"])] for _, r in tr.iterrows()],
             value=tr["n"].tolist(),
             color=[f"rgba({int(c[0:2], 16)},{int(c[2:4], 16)},{int(c[4:6], 16)},0.35)" for c in link_color],
-            hovertemplate="тип %{source.label} → тип %{target.label}: %{value} МО<extra></extra>",
+            hovertemplate="%{source.label} → %{target.label}: %{value} МО<extra></extra>",
         ),
     )
 )
@@ -114,8 +121,9 @@ fig.update_layout(
 )
 st.plotly_chart(fig, width="stretch")
 st.caption(
-    "Колонки — годы, узлы — сквозные типы (номер сохраняется, если кластер следующего года сопоставлен с ним "
-    "венгерским алгоритмом по мере Жаккара), ленты — МО, перешедшие из типа в тип."
+    "Колонки — годы, узлы — сквозные типы K1…Kn (K1 — самый высокий ВМП на душу в ценах базового года), ленты — МО, "
+    "перешедшие из типа в тип. В режиме pooled тип одинаково определён во всех годах; в режиме «каждый год заново» "
+    "кластеры соседних лет сопоставляются венгерским алгоритмом по мере Жаккара."
 )
 
 st.subheader("Устойчивость по годам")
@@ -139,7 +147,10 @@ y_from = a.selectbox("Из года", years[:-1], index=len(years) - 2)
 y_to = b.selectbox("В год", [y for y in years if y > y_from], index=0)
 s = th.set_index(["year", "territory_id"])["through"]
 common = s.loc[y_from].index.intersection(s.loc[y_to].index)
-mat = pd.crosstab(s.loc[y_from].loc[common].rename(f"тип в {y_from}"), s.loc[y_to].loc[common].rename(f"тип в {y_to}"))
+mat = pd.crosstab(
+    s.loc[y_from].loc[common].map(clustering.code).rename(f"кластер в {y_from}"),
+    s.loc[y_to].loc[common].map(clustering.code).rename(f"кластер в {y_to}"),
+)
 st.dataframe(mat, width="stretch")
 m = mo().set_index("territory_id")
 moved = pd.DataFrame({"было": s.loc[y_from].loc[common], "стало": s.loc[y_to].loc[common]})
@@ -153,7 +164,7 @@ stay = [int(i) for i in common if i not in moved.index]
 if stay:
     fig.add_trace(
         go.Choropleth(
-            geojson=features_subset(set(stay)),
+            geojson=features_subset(set(stay), coarse=len(common) > COARSE_FROM),
             featureidkey="properties.territory_id",
             locations=stay,
             z=[1] * len(stay),
@@ -172,7 +183,7 @@ for t in sorted(moved["стало"].unique()):
     sel = moved[moved["стало"].eq(t)]
     fig.add_trace(
         go.Choropleth(
-            geojson=features_subset(set(int(i) for i in sel.index)),
+            geojson=features_subset(set(int(i) for i in sel.index), coarse=len(common) > COARSE_FROM),
             featureidkey="properties.territory_id",
             locations=list(sel.index),
             z=[1] * len(sel),
@@ -180,9 +191,11 @@ for t in sorted(moved["стало"].unique()):
             colorscale=[[0, cluster_color(int(t))], [1, cluster_color(int(t))]],
             marker_line_width=0.3,
             marker_line_color="white",
-            name=f"перешли в тип {t} ({len(sel)})",
+            name=f"перешли в {clustering.code(t)} ({len(sel)})",
             showlegend=True,
-            text=[f"{m.at[i, 'name']}<br>тип {int(sel.at[i, 'было'])} → {int(t)}" for i in sel.index],
+            text=[
+                f"{m.at[i, 'name']}<br>{clustering.code(sel.at[i, 'было'])} → {clustering.code(t)}" for i in sel.index
+            ],
             hovertemplate="%{text}<extra></extra>",
         )
     )

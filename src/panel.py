@@ -51,6 +51,11 @@ def read_series(spec: dict) -> pd.DataFrame:
         if spec.get("sectoral"):
             raw = bdmo.annual(bdmo.read_top(code))
             clf = "okved2" if "okved2" in raw.columns else "okved"
+            # «итог» по остальным разрезам (например, форма собственности okfs) — по правилам sources.yaml / select
+            rules = {**(bdmo.indicator_meta(code).get("total") or {}), **(spec.get("select") or {})}
+            for dim, vals in rules.items():
+                if dim != clf and dim in raw.columns:
+                    raw = raw[raw[dim].isin(vals if isinstance(vals, list) else [vals])]
             tot = raw[raw[clf].str.contains(bdmo.TOTAL_RE, regex=True, na=False)].assign(indicator=spec["id"])
             sec = raw.assign(_s=raw[clf].map(lambda x, c=clf: _section_suffix(x, c))).dropna(subset=["_s"])
             sec = sec.assign(indicator=spec["id"] + "__" + sec["_s"]).drop(columns="_s")

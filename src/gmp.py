@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from src.regional import grp, grp_volume_index, gva_okved2
+from src.regional import grp, gva_okved2
 
 GVA_SECTIONS = [*"ABCDEFGHIJK", "L1", "L2", *"MNOPQRST"]
 
@@ -138,22 +138,6 @@ def compute(data: GMPInputs, method: str, years: list[int], params: dict | None 
     """ВМП выбранным методом за годы years (одна строка на МО × год)."""
     f = METHODS[method]
     return pd.concat([f(data, y, params or {}) for y in years], ignore_index=True).assign(method=method)
-
-
-def grp_deflator(base_year: int) -> pd.DataFrame:
-    """Цепной дефлятор ВРП субъекта: (ВРП_t/ВРП_{t−1}) / (ИФО_t/100), = 1 в базовом году."""
-    g = grp().merge(grp_volume_index(), on=["region_code", "year"]).sort_values(["region_code", "year"])
-    g["step"] = g.groupby("region_code")["grp"].pct_change().add(1) / (g["grp_vi"] / 100)
-    out = []
-    for r, x in g.groupby("region_code"):
-        x = x.set_index("year")["step"]
-        idx = {base_year: 1.0}
-        for y in sorted(y for y in x.index if y > base_year):
-            idx[y] = idx[y - 1] * x[y] if y - 1 in idx and np.isfinite(x[y]) else np.nan
-        for y in sorted((y for y in x.index if y < base_year), reverse=True):
-            idx[y] = idx[y + 1] / x[y + 1] if y + 1 in idx and np.isfinite(x.get(y + 1, np.nan)) else np.nan
-        out.append(pd.DataFrame({"region_code": r, "year": list(idx), "deflator": list(idx.values())}))
-    return pd.concat(out, ignore_index=True)
 
 
 def structure(d: pd.DataFrame) -> pd.DataFrame:

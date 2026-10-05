@@ -3,8 +3,8 @@
 Запуск:  python scripts/build_gmp.py
 
 Результаты:
-  data/processed/gmp.parquet              territory_id, year, method, gmp, gmp_pc, gmp_pc_real, gmp_imputed_share,
-                                          derived, valid_in_year
+  data/processed/gmp.parquet              territory_id, year, method, gmp, gmp_pc (текущие цены), gmp_imputed_share,
+                                          derived, valid_in_year; в цены базового года — src/prices.py (дефлятор ВРП)
   data/processed/gmp_structure.parquet    отраслевая структура ВМП (метод 2)
   data/processed/gmp_sensitivity.parquet  ВМП на душу при разных индикаторах распределения
   data/processed/gmp_agglomerations.parquet
@@ -53,13 +53,11 @@ def params(cfg: dict, variant: dict | None = None) -> dict:
     return p
 
 
-def per_capita(d: pd.DataFrame, pop: pd.Series, defl: pd.DataFrame, mo: pd.DataFrame) -> pd.DataFrame:
+def per_capita(d: pd.DataFrame, pop: pd.Series, mo: pd.DataFrame) -> pd.DataFrame:
     d = d.merge(mo[["territory_id", "region_code"]], on="territory_id", how="left", suffixes=("", "_mo"))
     d["region_code"] = d["region_code"].fillna(d.get("region_code_mo"))
     d["pop"] = d.set_index(["territory_id", "year"]).index.map(pop)
     d["gmp_pc"] = d["gmp"] * 1000 / d["pop"]
-    d = d.merge(defl, on=["region_code", "year"], how="left")
-    d["gmp_pc_real"] = d["gmp_pc"] / d["deflator"]
     d["gmp_imputed_share"] = d["gmp_imputed"] / d["gmp"]
     return d
 
@@ -112,7 +110,6 @@ def main() -> int:
     data = gmp.GMPInputs.load(wide, mo)
     pop = wide.set_index(["territory_id", "year"])["pop"]
     valid = wide.set_index(["territory_id", "year"])["valid_in_year"]
-    defl = gmp.grp_deflator(cfg["base_year"])
     p = params(cfg)
     by = list(range(cfg["basic_years"][0], cfg["basic_years"][1] + 1))
     sy = [y for y in range(cfg["sectoral_years"][0], cfg["sectoral_years"][1] + 1) if y in set(data.gva["year"])]
@@ -140,7 +137,7 @@ def main() -> int:
     frames = []
     for meth, d in raw.items():
         e = extend(d, meth, cfg_panel)
-        e = per_capita(e, pop, defl, mo).assign(method=meth)
+        e = per_capita(e, pop, mo).assign(method=meth)
         frames.append(e)
     res = pd.concat(frames, ignore_index=True)
     res["valid_in_year"] = res.set_index(["territory_id", "year"]).index.map(valid).fillna(False).astype(bool)
@@ -151,12 +148,10 @@ def main() -> int:
         "method",
         "gmp",
         "gmp_pc",
-        "gmp_pc_real",
         "gmp_imputed_share",
         "derived",
         "valid_in_year",
         "region_code",
-        "deflator",
     ]
     res = res[cols].sort_values(["method", "territory_id", "year"]).reset_index(drop=True)
     res.to_parquet(PROCESSED / "gmp.parquet", index=False)
@@ -199,7 +194,8 @@ def main() -> int:
     # ================================================================ отчёт
     names = mo.set_index("territory_id")["name"]
     dfo_ids = set(mo.loc[mo["is_dfo"], "territory_id"])
-    r2 = res[res["valid_in_year"] & res["territory_id"].isin(dfo_ids)]
+    # отчёт — по всей России (основная выборка); сверка с ВГП — по городам ДФО (другого ВГП у Росстата нет)
+    r2 = res[res["valid_in_year"]]
     w("# Проверки расчёта ВМП")
     w()
     w(
@@ -209,7 +205,7 @@ def main() -> int:
     w()
     w(
         f"Метод 1 (по общему ФОТ): {by[0]}–{by[-1]}; метод 2 (отраслевой): {sy[0]}–{sy[-1]}. "
-        f"Дефлятор — цепной дефлятор ВРП субъекта, базовый год {cfg['base_year']}."
+        "ВМП — в текущих ценах; в цены базового года пересчитывается дефлятором ВРП (src/prices.py)."
     )
     w()
     w("## 1. Сумма ВМП по МО субъекта равна ВРП субъекта")
@@ -223,10 +219,17 @@ def main() -> int:
     )
     w()
     n = r2[r2["method"].eq("sectoral")].groupby("year")["territory_id"].nunique()
-    w("МО ДФО с оценкой (метод 2) по годам: " + ", ".join(f"{y}: {v}" for y, v in n.items()) + " (из 230).")
+    n_dfo = r2[r2["method"].eq("sectoral") & r2["territory_id"].isin(dfo_ids)].groupby("year")["territory_id"].nunique()
+    w(
+        "МО России с оценкой (метод 2) по годам: "
+        + ", ".join(f"{y}: {v}" for y, v in n.items())
+        + "; в т.ч. ДФО: "
+        + ", ".join(f"{y}: {v}" for y, v in n_dfo.items())
+        + " (из 230)."
+    )
     w()
 
-    w("## 2. Метод 1 против метода 2 (ДФО)")
+    w("## 2. Метод 1 против метода 2 (вся Россия)")
     w()
     a = r2.pivot_table(index=["territory_id", "year"], columns="method", values="gmp_pc").dropna()
     rows = []
@@ -256,14 +259,14 @@ def main() -> int:
     x = x.reindex(x["ratio"].map(lambda v: abs(np.log(v))).sort_values(ascending=False).index).head(20)
     x.insert(0, "МО", x.index.map(names))
     x = x.rename(columns={"basic": "метод 1, руб./чел.", "sectoral": "метод 2, руб./чел.", "ratio": "метод2/метод1"})
-    w(f"Топ-20 МО ДФО с наибольшим расхождением методов, {yy} г.:")
+    w(f"Топ-20 МО России с наибольшим расхождением методов, {yy} г.:")
     w()
     w(md(x.reset_index(drop=True), "{:,.2f}"))
     w()
 
-    w("## 3. Чувствительность ранжирования МО ДФО к индикаторам распределения (метод 2)")
+    w("## 3. Чувствительность ранжирования МО России к индикаторам распределения (метод 2)")
     w()
-    sp = sens[sens["territory_id"].isin(dfo_ids) & sens["year"].eq(yy)].pivot_table(
+    sp = sens[sens["territory_id"].isin(set(r2["territory_id"])) & sens["year"].eq(yy)].pivot_table(
         index="territory_id", columns="variant", values="gmp_pc"
     )
     rk = sp.rank(ascending=False)
@@ -285,7 +288,7 @@ def main() -> int:
         )
     w(md(pd.DataFrame(rows), "{:.3f}"))
     w()
-    w(f"Ранги — по ВМП на душу среди МО ДФО, {yy} г. (1 — самый высокий).")
+    w(f"Ранги — по ВМП на душу среди МО России, {yy} г. (1 — самый высокий).")
     w()
 
     w("## 4. Внешняя сверка: валовой городской продукт Росстата (города ДФО, 2023–2024)")
@@ -344,7 +347,7 @@ def main() -> int:
         w("Не сопоставлены со справочником: " + ", ".join(nm) + ".")
         w()
 
-    w("## 5. Доля импутированной ВДС (`gmp_imputed_share`), ДФО, метод 2")
+    w("## 5. Доля импутированной ВДС (`gmp_imputed_share`), вся Россия, метод 2")
     w()
     s = r2[r2["method"].eq("sectoral")]
     tab = s.groupby("year")["gmp_imputed_share"].describe(percentiles=[0.5, 0.9])[["mean", "50%", "90%", "max"]]

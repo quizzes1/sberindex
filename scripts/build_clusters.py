@@ -53,12 +53,21 @@ def consensus_k(tab: pd.DataFrame) -> pd.Series:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument(
+        "--only",
+        nargs="+",
+        help="досчитать только эти методы и влить в готовую сетку data/clusters/{hash} (остальные методы не трогать)",
+    )
+    ap.add_argument("--skip", nargs="+", default=[], help="не считать эти методы (сетка без них, не слияние)")
     a = ap.parse_args()
     cp = clustering.default_params()
     netp = network.merge_params(network.default_params(), cp.get("network_override"))
     h = network.config_hash(netp)
     nets = network.build(netp)
     methods = {m: v for m, v in cp["methods"].items() if not (a.quick and m == "canus")}
+    if a.only:
+        methods = {m: v for m, v in methods.items() if m in a.only}
+    methods = {m: v for m, v in methods.items() if m not in a.skip}
     skipped = {}
     for m in list(methods):
         ok, why = clustering.available(m)
@@ -72,15 +81,28 @@ def main() -> int:
         Wsp = net.W * net.A
         for m, mp in methods.items():
             t = time.time()
+            # медленные методы (CANUS) в автоматической сетке — на фиксированной подвыборке МО года
+            # (одна и та же для всех k); на полной выборке они запускаются вручную в интерфейсе
+            idx = np.arange(len(X))
+            sub_n = mp.get("grid_subsample")
+            if sub_n and len(X) > sub_n:
+                idx = np.sort(np.random.default_rng(cp["seed"] + int(y)).choice(len(X), sub_n, replace=False))
+            Xs, Ws, ids = X[idx], Wsp[np.ix_(idx, idx)], net.ids[idx]
             for k in ks:
-                lab = clustering.fit(X, Wsp, {**mp, "method": m, "k": k, "seed": cp["seed"]})
-                labels.append(pd.DataFrame({"year": y, "method": m, "k": k, "territory_id": net.ids, "label": lab}))
-                scores.append({"year": y, "method": m, "k": k, **icvi.compute_all(X, Wsp, lab)})
+                lab = clustering.fit(Xs, Ws, {**mp, "method": m, "k": k, "seed": cp["seed"]})
+                labels.append(pd.DataFrame({"year": y, "method": m, "k": k, "territory_id": ids, "label": lab}))
+                scores.append({"year": y, "method": m, "k": k, "n_nodes": len(idx), **icvi.compute_all(Xs, Ws, lab)})
             print(f"{y} {m}: {time.time() - t:.1f} с", flush=True)
     out = CLUSTERS / h
     out.mkdir(parents=True, exist_ok=True)
     L = pd.concat(labels, ignore_index=True)
     S = pd.DataFrame(scores)
+    if a.only and (out / "labels.parquet").exists():
+        # влить в готовую сетку: строки пересчитанных методов заменяются, остальные остаются
+        L0, S0 = pd.read_parquet(out / "labels.parquet"), pd.read_parquet(out / "icvi.parquet")
+        L = pd.concat([L0[~L0["method"].isin(list(methods))], L], ignore_index=True)
+        S = pd.concat([S0[~S0["method"].isin(list(methods))], S], ignore_index=True)
+        methods = {m: v for m, v in cp["methods"].items() if m in set(S["method"])}
     L.to_parquet(out / "labels.parquet", index=False)
     S.to_parquet(out / "icvi.parquet", index=False)
     (out / "params.json").write_text(
@@ -94,7 +116,8 @@ def main() -> int:
     rep = [
         "# Кластеризация и индексы качества (этап 5)",
         "",
-        f"Сгенерировано `scripts/build_clusters.py`. Сеть `{h}` (параметры `configs/network.yaml`: ДФО, "
+        f"Сгенерировано `scripts/build_clusters.py`. Сеть `{h}` (параметры `configs/network.yaml`: "
+        f"{', '.join(netp['sample']['federal_districts']) or 'вся Россия'}, "
         f"{min(nets)}–{max(nets)}, признаки {list(netp['features'])}). Методы и k — `configs/clustering.yaml`.",
         "",
         "Индексы: SW, CH, S_Dbw (и DBI) — в пространстве нормированных признаков; AVI, AVU, ANUI, MQ — по весам "
@@ -105,6 +128,14 @@ def main() -> int:
     ]
     if skipped:
         rep += ["Не запущены: " + "; ".join(f"{m} — {w}" for m, w in skipped.items()), ""]
+    subs = {m: v["grid_subsample"] for m, v in methods.items() if v.get("grid_subsample")}
+    if subs:
+        rep += [
+            "На подвыборке МО (одна и та же для всех k в пределах года; полная выборка — вручную в интерфейсе): "
+            + ", ".join(f"{m} — {n} МО" for m, n in subs.items())
+            + ". Сравнение с другими методами (ARI) — на общих МО.",
+            "",
+        ]
     mean = S.groupby(["method", "k"]).mean(numeric_only=True).drop(columns="year")
     rep += ["## 1. Индексы для k = 2…10 (среднее по годам)", ""]
     best = []
@@ -155,7 +186,8 @@ def main() -> int:
             for y in nets:
                 a_ = L[(L.year == y) & (L.method == i) & (L.k == k0)].set_index("territory_id")["label"]
                 b_ = L[(L.year == y) & (L.method == j) & (L.k == k0)].set_index("territory_id")["label"]
-                vals.append(adjusted_rand_score(a_, b_.reindex(a_.index)))
+                common = a_.index.intersection(b_.index)  # CANUS — на подвыборке
+                vals.append(adjusted_rand_score(a_.loc[common], b_.loc[common]))
             ari.loc[i, j] = float(np.mean(vals))
     rep += [
         f"### Согласие методов: скорректированный индекс Рэнда (ARI) между разбиениями, k = {k0}",

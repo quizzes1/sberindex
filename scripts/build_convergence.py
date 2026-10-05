@@ -2,8 +2,9 @@
 
 Запуск:  python scripts/build_convergence.py
 
-Ряды и выборки — configs/dynamics.yaml (convergence). Выборки: ДФО, Россия и каждый тип
-(сквозной кластер последнего года) разбиения по умолчанию внутри ДФО.
+Ряды и выборки — configs/dynamics.yaml (convergence). Выборки: вся Россия, ДФО (пресет) и каждый тип
+(сквозной кластер последнего года) разбиения по умолчанию. Клубы Филлипса–Сула — по ДФО: алгоритм
+квадратичен по числу МО, на всей России (~2 300 МО) он слишком долгий.
 Состав МО: действующие в конце окна территории (с достроенными значениями прошлых лет для
 преемников объединений — derived), т.е. МО в последних неизменных границах.
 Результаты: data/processed/convergence_sigma.parquet, convergence_beta.parquet, convergence_clubs.parquet;
@@ -40,19 +41,8 @@ def md(df: pd.DataFrame, fmt: str = "{:.4f}") -> str:
 
 
 def series(spec: dict, mo: pd.DataFrame) -> pd.DataFrame:
-    """territory_id, year, value для ряда: только МО, действующие в конце окна."""
-    y0, y1 = spec["years"]
-    if spec["source"] == "gmp":
-        g = pd.read_parquet(PROCESSED / "gmp.parquet")
-        d = g[g["method"].eq(spec["method"])][["territory_id", "year", spec["column"], "valid_in_year", "derived"]]
-    else:
-        d = pd.read_parquet(
-            PROCESSED / "indicators_wide.parquet",
-            columns=["territory_id", "year", spec["column"], "valid_in_year", "derived"],
-        )
-    d = d[(d["valid_in_year"] | d["derived"]) & d["year"].between(y0, y1)]
-    d = d[d["territory_id"].isin(mo.loc[mo["active"], "territory_id"])]
-    return d.rename(columns={spec["column"]: "value"})[["territory_id", "year", "value"]].dropna()
+    """territory_id, year, value для ряда: только МО, действующие в конце окна; денежные — в ценах базового года."""
+    return convergence.load_series(spec, mo.loc[mo["active"], "territory_id"])
 
 
 def main() -> int:
@@ -88,10 +78,10 @@ def main() -> int:
         d = series(spec, mo)
         y0, y1 = spec["years"]
         short = (y1 - y0 + 1) < cc["min_years_reliable"]
-        samples = {"ДФО": d[d["territory_id"].isin(dfo)], "Россия": d}
+        samples = {"Россия": d, "ДФО": d[d["territory_id"].isin(dfo)]}
         for t in sorted(types.unique()):
             ids = set(types.index[types.eq(t)])
-            samples[f"ДФО, тип {t}"] = d[d["territory_id"].isin(ids)]
+            samples[f"тип {t}"] = d[d["territory_id"].isin(ids)]
         rep += [f"## {spec['name']} (`{key}`), {y0}–{y1}" + (" — короткое окно, выводы ненадёжны" if short else ""), ""]
         rows = []
         for sname, sd in samples.items():
@@ -144,7 +134,7 @@ def main() -> int:
             "растут быстрее; log t: t < −1,65 — гипотеза общей конвергенции отвергается (Phillips–Sul).",
             "",
         ]
-        # клубы — для ДФО
+        # клубы — для ДФО (на всей России алгоритм квадратичен по числу МО и слишком долгий)
         Ld = convergence._log_panel(samples["ДФО"])
         cl = convergence.clubs(Ld, **cc["phillips_sul"])
         for tid, c in cl.items():

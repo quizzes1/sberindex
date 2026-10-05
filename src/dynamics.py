@@ -71,6 +71,28 @@ def match_years(labels: pd.DataFrame, min_jaccard: float = 0.2) -> pd.DataFrame:
     return pd.concat(out, ignore_index=True)
 
 
+def through_labels(
+    labels: pd.DataFrame, mode: str, min_jaccard: float = 0.2, price_params: dict | None = None, order: bool = True
+) -> pd.DataFrame:
+    """Сквозные типы K1…Kn: territory_id, year, label, through (0 → K1), jaccard.
+
+    pooled — одна модель на все годы: метка уже сквозная, сопоставление не нужно (through = label);
+    per_year — сопоставление соседних лет (match_years). Затем типы перенумеровываются по медиане
+    показателя упорядочения (configs/clustering.yaml → order_by, по умолчанию ВМП на душу в ценах
+    базового года) по убыванию: through = 0 — самые высокие значения (подпись K1).
+    """
+    if mode == "pooled":
+        th = labels.assign(through=labels["label"], jaccard=np.nan)
+    else:
+        th = match_years(labels, min_jaccard)
+    if order:
+        from src.clustering import order_labels
+
+        s = th.set_index(["territory_id", "year"])["through"]
+        th["through"] = order_labels(s, price_params).to_numpy()
+    return th.reset_index(drop=True)
+
+
 def transitions(through: pd.DataFrame) -> pd.DataFrame:
     """Переходы между соседними годами: year_from, year_to, from, to, n (число МО)."""
     years = sorted(through["year"].unique())

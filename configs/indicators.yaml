@@ -4,38 +4,41 @@
 #
 # Поля: code, name (рус.), formula, source, unit, block (economy | social | consumption | quality),
 # log (логарифмировать перед нормировкой), direction (higher_better | lower_better | neutral),
-# money (денежный: строится и версия в ценах базового года «_cpi»), sectoral (по разделам ОКВЭД2:
+# monetary (денежный, в текущих рублях) + deflator — индекс цен для пересчёта в цены базового года
+# (src/prices.py: cpi | grp | invest | ppi_industry | ppi_manufacturing | ppi_agri; у денежного показателя
+# дефлятор обязателен — проверяется тестом), sectoral (по разделам ОКВЭД2:
 # коды вида <code>_<раздел>), note — ограничения.
 
 params:
-  base_year: 2017            # базовый год цен для «_cpi»
+  # Цены (этап 3 доработки). Денежные показатели хранятся в текущих ценах (indicators_wide); в сеть, кластеры,
+  # динамику и конвергенцию идут в ценах базового года: real_t = nominal_t × L_base / L_t (src/prices.py).
+  prices:
+    values: real                     # real | nominal (номинал — только для просмотра; конвергенция всегда в реальных)
+    base_year: 2023                  # базовый год цен (2012–2025)
+    deflator_scope: national         # national — индексы по России (точные среднегодовые) | regional — по субъектам
+    spatial_price_adjustment: false  # поправка на межрегиональные различия цен (фикс. набор субъект / Россия; только для ИПЦ-показателей)
   gmp_method: default        # default (отраслевой, где есть; иначе базовый с флагом) | sectoral | basic
-  lq_base: ДФО               # база коэффициента локализации lq_*; lq_ru_* — всегда по России
+  lq_base: Россия            # база коэффициента локализации lq_* (Россия | код ФО, напр. ДФО); lq_ru_* — всегда по России
   window: [2013, 2024]
 
 indicators:
   # ---------------------------------------------------------------- экономика
   - {code: gmp_pc, name: "ВМП на душу населения (оценка команды)", formula: "ВМП / P", source: "расчёт (src/gmp.py)",
-     unit: "руб.", block: economy, log: true, direction: higher_better, money: true,
+     unit: "руб.", block: economy, log: true, direction: higher_better, monetary: true, deflator: grp,
      note: "Расчётная оценка команды, не официальная статистика. Метод — параметр gmp_method."}
-  - {code: gmp_pc_real, name: "ВМП на душу в ценах базового года (дефлятор ВРП)", formula: "ВМП / P / дефлятор ВРП субъекта",
-     source: "расчёт", unit: "руб. базового года", block: economy, log: true, direction: higher_better}
   - {code: gmp_structure, name: "Доля отрасли в ВМП", formula: "ВДС_k МО / ВМП", source: "расчёт, метод 2",
      unit: "доля", block: economy, log: false, direction: neutral, sectoral: true}
   - {code: wage, name: "Среднемесячная зарплата", formula: "W", source: "БДПМО 8423007/8123007",
-     unit: "руб.", block: economy, log: true, direction: higher_better, money: true, note: "крупные и средние организации"}
-  - {code: wage_real, name: "Зарплата в фиксированных наборах", formula: "W / стоимость фиксированного набора в субъекте",
-     source: "БДПМО; Росстат (фикс. набор)", unit: "наборов", block: economy, log: true, direction: higher_better,
-     note: "поправка на межрегиональные различия цен; набор — на конец года"}
+     unit: "руб.", block: economy, log: true, direction: higher_better, monetary: true, deflator: cpi, note: "крупные и средние организации"}
   - {code: payroll_pc, name: "ФОТ на жителя", formula: "ФОТ / P", source: "БДПМО 8423006/8123006",
-     unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true}
+     unit: "руб. в год", block: economy, log: true, direction: higher_better, monetary: true, deflator: cpi}
   - {code: shipped_pc, name: "Отгрузка на жителя", formula: "отгрузка / P", source: "БДПМО 8401011/8201001",
-     unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true, note: "без МСП"}
+     unit: "руб. в год", block: economy, log: true, direction: higher_better, monetary: true, deflator: ppi_industry, note: "без МСП"}
   - {code: invest_pc, name: "Инвестиции в основной капитал на жителя", formula: "инвестиции / P", source: "БДПМО 8109001",
-     unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true,
+     unit: "руб. в год", block: economy, log: true, direction: higher_better, monetary: true, deflator: invest,
      note: "без МСП; нет Бурятии и Якутии до 2021 г.; ряд до 2023 г."}
   - {code: invest_pc_nobudget, name: "Инвестиции на жителя без бюджетных средств", formula: "ряд Росстата",
-     source: "БДПМО 8109003", unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true,
+     source: "БДПМО 8109003", unit: "руб. в год", block: economy, log: true, direction: higher_better, monetary: true, deflator: invest,
      note: "другое определение: без бюджетных средств; 88–100% МО ДФО"}
   - {code: invest_share, name: "Инвестиции к продукту", formula: "инвестиции / ВМП", source: "БДПМО 8109001; расчёт",
      unit: "доля", block: economy, log: false, direction: neutral}
@@ -48,10 +51,24 @@ indicators:
   - {code: hhi_emp, name: "Индекс Херфиндаля структуры занятости", formula: "Σ_k emp_share_k²",
      source: "БДПМО 8423005", unit: "индекс", block: economy, log: false, direction: neutral,
      note: "по опубликованным разделам; скрытые разделы не учтены"}
+  - {code: manuf_shipped_pc, name: "Отгрузка обрабатывающих производств на жителя", formula: "отгрузка раздела C / P",
+     source: "БДПМО 8401011 (раздел C)", unit: "руб. в год", block: economy, log: true, direction: higher_better, monetary: true,
+     deflator: ppi_manufacturing,
+     note: "без МСП; раздел C есть лишь у 34–43% МО: отсутствие строки — нет крупных и средних обрабатывающих организаций или значение скрыто"}
+  - {code: agri_output_pc, name: "Продукция сельского хозяйства на жителя", formula: "продукция с/х (все категории хозяйств) / P",
+     source: "БДПМО 8007010", unit: "руб. в год", block: economy, log: true, direction: neutral, monetary: true, deflator: ppi_agri,
+     note: "до 2023 г.; около 85% МО"}
+  - {code: manuf_orgs_per_10k, name: "Обрабатывающие организации на 10 тыс. жителей", formula: "организации раздела C, представившие отчёт / P × 10⁴",
+     source: "БДПМО 8942010 (раздел C)", unit: "на 10 тыс.", block: economy, log: true, direction: neutral,
+     note: "без МСП; раздел C есть лишь у ~30% МО"}
+  - {code: employment_ratio, name: "Работники крупных и средних организаций на жителя трудоспособного возраста",
+     formula: "L / население трудоспособного возраста", source: "БДПМО 8423005, 8112014", unit: "доля", block: economy,
+     log: false, direction: higher_better,
+     note: "замена уровня безработицы (по МО не публикуется); не учитывает МСП, самозанятых и работу в другом МО"}
   - {code: budget_own_share, name: "Бюджетная самостоятельность", formula: "доля налоговых и неналоговых доходов",
      source: "БДПМО 8313015/8013015", unit: "%", block: economy, log: false, direction: higher_better}
   - {code: budget_rev_pc, name: "Доходы местного бюджета на жителя", formula: "доходы / P", source: "БДПМО 8013001",
-     unit: "руб. в год", block: economy, log: true, direction: higher_better, money: true, note: "только до 2020 г."}
+     unit: "руб. в год", block: economy, log: true, direction: higher_better, monetary: true, deflator: cpi, note: "только до 2020 г."}
 
   # ---------------------------------------------------------------- социальная сфера и демография
   - {code: pop, name: "Население на 1 января", formula: "P", source: "БДПМО 8112027 (+8112014, 8112013)",
@@ -66,7 +83,7 @@ indicators:
   - {code: housing_pc, name: "Ввод жилья на жителя", formula: "ряд Росстата 8215001", source: "БДПМО 8215001",
      unit: "м² на жителя", block: social, log: true, direction: higher_better}
   - {code: retail_pc, name: "Оборот розничной торговли на жителя", formula: "оборот / P", source: "БДПМО 8401003/8201003",
-     unit: "руб. в год", block: social, log: true, direction: higher_better, money: true, note: "без МСП"}
+     unit: "руб. в год", block: social, log: true, direction: higher_better, monetary: true, deflator: cpi, note: "без МСП"}
   - {code: living_space_pc, name: "Жилая площадь на жителя", formula: "ряд Росстата 8211001", source: "БДПМО 8211001",
      unit: "м²", block: social, log: false, direction: higher_better}
   # здравоохранение, образование, демография (предложение: 4 показателя с хорошим покрытием)

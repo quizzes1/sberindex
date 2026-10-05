@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 
 from src.io import PROCESSED, load_yaml
-from src.regional import regions_collection
 
 OKVED2 = list("ABCDEFGHIJKLMNOPQRS")
 SPEND_CATS = ["food", "marketplaces", "transport", "health", "catering", "other"]
@@ -36,7 +35,6 @@ class Context:
     mo: pd.DataFrame
     gmp: pd.DataFrame
     structure: pd.DataFrame
-    prices: pd.DataFrame
     params: dict = field(default_factory=dict)
 
     @classmethod
@@ -46,7 +44,7 @@ class Context:
         mo = pd.read_parquet(PROCESSED / "mo.parquet")
         gmp = pd.read_parquet(PROCESSED / "gmp.parquet")
         st = pd.read_parquet(PROCESSED / "gmp_structure.parquet")
-        return cls(wide=wide, mo=mo, gmp=gmp, structure=st, prices=regional_prices(p["base_year"]), params=p)
+        return cls(wide=wide, mo=mo, gmp=gmp, structure=st, params=p)
 
     def col(self, name: str) -> pd.Series:
         return self.wide[name] if name in self.wide else pd.Series(np.nan, index=self.wide.index)
@@ -60,27 +58,6 @@ class Context:
         """Региональный ряд (индекс region_code, year) → значения для строк панели."""
         idx = list(zip(self.region(), self.wide.index.get_level_values("year")))
         return pd.Series(s.reindex(idx).values, index=self.wide.index)
-
-
-def regional_prices(base_year: int) -> pd.DataFrame:
-    """ИПЦ-уровень цен субъекта (среднегодовой, = 1 в базовом году) и стоимость фиксированного набора.
-
-    ИПЦ у Росстата — декабрь к декабрю; уровень на декабрь — цепное произведение, среднегодовой
-    уровень приближается средним геометрическим уровней на декабрь прошлого и текущего года.
-    """
-    d = regions_collection(["Y477110111", "Y477110395"]).dropna(subset=["region_code"])
-    cpi = d[d["indicator_code"].eq("Y477110111")].pivot_table(
-        index="year", columns="region_code", values="indicator_value"
-    )
-    dec = (cpi / 100).cumprod()
-    avg = np.sqrt(dec * dec.shift(1))
-    avg = avg / avg.loc[base_year]
-    basket = d[d["indicator_code"].eq("Y477110395") & d["indicator_unit"].eq("Рублей")].pivot_table(
-        index="year", columns="region_code", values="indicator_value"
-    )
-    out = pd.DataFrame({"cpi_level": avg.stack(), "basket": basket.stack()})
-    out.index = out.index.set_names(["year", "region_code"])
-    return out.reset_index()
 
 
 def _per_capita(ctx: Context, col: str, scale: float = 1000.0) -> pd.Series:
@@ -117,10 +94,6 @@ def gmp_pc(ctx: Context) -> pd.Series:
     return _gmp_choose(ctx, "gmp_pc")
 
 
-def gmp_pc_real(ctx: Context) -> pd.Series:
-    return _gmp_choose(ctx, "gmp_pc_real")
-
-
 def gmp_imputed_share(ctx: Context) -> pd.Series:
     return _gmp_choose(ctx, "gmp_imputed_share")
 
@@ -133,11 +106,6 @@ def gmp_structure(ctx: Context) -> pd.DataFrame:
 
 def wage(ctx: Context) -> pd.Series:
     return ctx.col("wage")
-
-
-def wage_real(ctx: Context) -> pd.Series:
-    b = ctx.prices.set_index(["region_code", "year"])["basket"]
-    return ctx.col("wage") / ctx.by_region(b)
 
 
 def payroll_pc(ctx: Context) -> pd.Series:
@@ -197,6 +165,22 @@ def hhi_emp(ctx: Context) -> pd.Series:
 
 def emp_share_unknown(ctx: Context) -> pd.Series:
     return (1 - emp_share(ctx).sum(axis=1, min_count=1)).clip(lower=0)
+
+
+def manuf_shipped_pc(ctx: Context) -> pd.Series:
+    return _per_capita(ctx, "shipped__C")
+
+
+def agri_output_pc(ctx: Context) -> pd.Series:
+    return _per_capita(ctx, "agri_output")
+
+
+def manuf_orgs_per_10k(ctx: Context) -> pd.Series:
+    return ctx.col("n_orgs_rep__C") / ctx.col("pop") * 1e4
+
+
+def employment_ratio(ctx: Context) -> pd.Series:
+    return ctx.col("workers") / ctx.col("pop_working")
 
 
 def budget_own_share(ctx: Context) -> pd.Series:
@@ -278,9 +262,12 @@ def market_access(ctx: Context) -> pd.Series:
 
 # ============================================================================ сборка
 def compute_all(ctx: Context) -> pd.DataFrame:
-    """Все показатели реестра + версии «_cpi» для денежных. Возвращает wide (territory_id, year)."""
+    """Все показатели реестра в текущих ценах. Возвращает wide (territory_id, year).
+
+    Денежные показатели (monetary) пересчитываются в цены базового года при использовании —
+    src/prices.py, параметры params.prices; отдельных «реальных» колонок здесь нет.
+    """
     cols = {}
-    lvl = ctx.by_region(ctx.prices.set_index(["region_code", "year"])["cpi_level"])
     for ind in registry():
         f = globals().get(ind["code"])
         if f is None:
@@ -288,8 +275,6 @@ def compute_all(ctx: Context) -> pd.DataFrame:
         r = f(ctx)
         if isinstance(r, pd.Series):
             cols[ind["code"]] = r
-            if ind.get("money"):
-                cols[f"{ind['code']}_cpi"] = r / lvl
         else:
             cols.update({c: r[c] for c in r.columns})
     out = pd.DataFrame(cols, index=ctx.wide.index)
@@ -299,7 +284,7 @@ def compute_all(ctx: Context) -> pd.DataFrame:
 
 
 def expand_registry() -> pd.DataFrame:
-    """Реестр с раскрытыми отраслевыми и «_cpi» кодами: одна строка на колонку indicators_wide."""
+    """Реестр с раскрытыми отраслевыми кодами: одна строка на колонку indicators_wide."""
     rows = []
     sectors = {"spend_share": SPEND_CATS, "gmp_structure": [*OKVED2, "T"]}
     for ind in registry():
@@ -308,15 +293,4 @@ def expand_registry() -> pd.DataFrame:
                 rows.append({**ind, "code": f"{ind['code']}_{k}", "name": f"{ind['name']}: {k}", "parent": ind["code"]})
         else:
             rows.append({**ind, "parent": ind["code"]})
-            if ind.get("money"):
-                rows.append(
-                    {
-                        **ind,
-                        "code": f"{ind['code']}_cpi",
-                        "name": f"{ind['name']} (в ценах {registry_params()['base_year']} г., ИПЦ)",
-                        "unit": f"{ind['unit']} {registry_params()['base_year']} г.",
-                        "parent": ind["code"],
-                        "money": False,
-                    }
-                )
     return pd.DataFrame(rows)

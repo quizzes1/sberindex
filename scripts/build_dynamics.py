@@ -19,7 +19,7 @@ warnings.simplefilter("ignore")
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from src import clustering, dynamics, network  # noqa: E402
+from src import clustering, dynamics, network, prices  # noqa: E402
 from src.io import DATA, PROCESSED, REPORTS, load_yaml  # noqa: E402
 
 
@@ -53,7 +53,8 @@ def main() -> int:
         lab = clustering.fit_pooled(Xp, mp).reset_index()
     else:
         lab = L[L["method"].eq(a.method) & L["k"].eq(a.k)][["territory_id", "year", "label"]]
-    th = dynamics.match_years(lab, cfg["matching"]["min_jaccard"])
+    # сквозные типы K1…Kn (0 → K1 — самый высокий ВМП на душу в ценах базового года)
+    th = dynamics.through_labels(lab, a.mode, cfg["matching"]["min_jaccard"], netp["prices"])
     tr = dynamics.transitions(th)
     mig = dynamics.migrants(th)
     ys = dynamics.year_summary(th)
@@ -117,6 +118,11 @@ def main() -> int:
     # паспорта сквозных типов: медианы исходных показателей за последний год
     mo = pd.read_parquet(PROCESSED / "mo.parquet").set_index("territory_id")
     ind = pd.read_parquet(PROCESSED / "indicators_wide.parquet")
+    pr = netp["prices"]  # денежные — в тех же ценах, что и признаки сети
+    if pr.get("values", "real") == "real":
+        ind = prices.to_real(
+            ind, list(ind.columns), pr["base_year"], pr["deflator_scope"], pr["spatial_price_adjustment"]
+        )
     last = max(nets)
     t_last = th[th["year"].eq(last)].merge(ind[ind["year"].eq(last)], on=["territory_id", "year"])
     feats = list(netp["features"]) + ["pop", "wage", "gmp_imputed_share"]
@@ -130,13 +136,25 @@ def main() -> int:
     )
     prof["крупнейшие МО"] = examples
 
+    K = clustering.code
     tm = tr[tr["year_from"].eq(last - 1)].pivot_table(index="from", columns="to", values="n", fill_value=0)
+    tm.index = [K(c) for c in tm.index]
+    tm.columns = [K(c) for c in tm.columns]
+    tm.index.name = "from"
+    prof.index = [K(c) for c in prof.index]
+    prof.index.name = "through"
     rep = [
         "# Динамика кластеров (этап 6)",
         "",
         f"Сгенерировано `scripts/build_dynamics.py`. Сеть `{h}`, метод **{a.method}**, k = {a.k}, режим **{a.mode}** "
-        f"(`configs/dynamics.yaml`). Кластеры соседних лет сопоставлены венгерским алгоритмом по мере Жаккара "
-        f"(порог {cfg['matching']['min_jaccard']}); «сквозной» номер — тип МО, прослеживаемый через годы.",
+        f"(`configs/dynamics.yaml`). "
+        + (
+            "Одна модель на все МО-годы: тип одинаково определён во всех годах, сопоставление не нужно. "
+            if a.mode == "pooled"
+            else f"Кластеры соседних лет сопоставлены венгерским алгоритмом по мере Жаккара "
+            f"(порог {cfg['matching']['min_jaccard']}). "
+        )
+        + "Типы пронумерованы K1…Kn по медиане ВМП на душу в ценах базового года, по убыванию (K1 — самый высокий).",
         "",
         "## 1. Сводка по годам",
         "",
@@ -161,11 +179,15 @@ def main() -> int:
         f"{mig['territory_id'].nunique()} из {th['territory_id'].nunique()}",
         "",
     ]
-    top = mig.assign(МО=mig["territory_id"].map(mo["name"]), регион=mig["territory_id"].map(mo["region_name"]))
+    top = mig.assign(
+        МО=mig["territory_id"].map(mo["name"]),
+        регион=mig["territory_id"].map(mo["region_name"]),
+        **{"from": mig["from"].map(K), "to": mig["to"].map(K)},
+    )
     rep += [md(top[top["year_to"].eq(last)][["МО", "регион", "year_from", "year_to", "from", "to"]].head(40), "{}"), ""]
     # сравнение режимов: каждый год заново против одной модели на всю панель
     comp = []
-    for m in ("kmeans", "ward", "gmm", "leiden", "spectral", "kefrin", "canus"):
+    for m in ("kmeans", "ward", "ward_kmeans", "gmm", "leiden", "spectral", "kefrin", "canus"):
         lm = L[L["method"].eq(m) & L["k"].eq(a.k)][["territory_id", "year", "label"]]
         if len(lm):
             s_ = dynamics.year_summary(dynamics.match_years(lm, cfg["matching"]["min_jaccard"]))

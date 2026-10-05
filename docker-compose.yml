@@ -13,11 +13,11 @@ services:
     image: sberindex-clusters:latest
     restart: unless-stopped
     volumes:
-      - ./data:/app/data          # готовые данные из репозитория; сюда же сохраняются названия типов и сети
+      - ./data:/app/data          # готовые данные из репозитория; сюда же — названия типов, сети и пересчёт с сайта
       - ./configs:/app/configs:ro # параметры по умолчанию можно менять без пересборки образа
     expose:
       - "8501"                    # наружу не публикуется — только через Caddy
-    mem_limit: "${APP_MEM_LIMIT:-6g}"
+    mem_limit: "${APP_MEM_LIMIT:-7g}"   # интерфейс + пересчёт со страницы «Обновление данных»
     environment:
       - PYTHONIOENCODING=utf-8
 

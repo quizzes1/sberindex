@@ -33,7 +33,15 @@ EARTH_R = 6371.0
 
 # ============================================================================ параметры
 def default_params() -> dict:
-    return load_yaml("network.yaml")
+    """configs/network.yaml + параметры цен (configs/indicators.yaml → params.prices, если в network.yaml их нет).
+
+    Параметры цен входят в хэш сети: смена базового года, охвата дефляторов или межрегиональной
+    поправки даёт другую сеть и другой каталог data/networks/{hash}/."""
+    from src.prices import price_params
+
+    p = load_yaml("network.yaml")
+    p["prices"] = price_params(p.get("prices"))
+    return p
 
 
 def merge_params(base: dict, override: dict | None) -> dict:
@@ -80,17 +88,33 @@ def sample_rows(params: dict, wide: pd.DataFrame | None = None) -> pd.DataFrame:
 
 
 def features(params: dict, wide: pd.DataFrame | None = None) -> pd.DataFrame:
-    """Нормированные признаки выборки, индекс (territory_id, year). Пропуски сохраняются."""
+    """Нормированные признаки выборки, индекс (territory_id, year). Пропуски сохраняются.
+
+    Денежные признаки сначала пересчитываются в цены базового года (params.prices, src/prices.py)."""
     rows = sample_rows(params, wide).set_index(["territory_id", "year"])
     cols = list(params["features"])
     missing = [c for c in cols if c not in rows]
     if missing:
         raise KeyError(f"Нет показателей: {missing}")
+    pr = params.get("prices") or {}
+    if pr.get("values", "real") == "real":
+        from src.prices import to_real
+
+        rows = to_real(
+            rows, cols, pr["base_year"], pr.get("deflator_scope", "national"), bool(pr.get("spatial_price_adjustment"))
+        )
     pp = params["preprocess"]
     logc = []
     if pp.get("log") == "registry":
         reg = _registry().set_index("code")
         logc = [c for c in cols if c in reg.index and bool(reg.at[c, "log"])]
+        if pr.get("values", "real") == "real":
+            # ln(1 + x) — в рублях опорного года: признаки не зависят от выбора базового года (src/prices.py)
+            from src.prices import log_unit_scale
+
+            rows = rows.copy()
+            for c, u in log_unit_scale([c for c in logc], pr["base_year"]).items():
+                rows[c] = rows[c] / u
     return prepare(
         rows,
         cols,

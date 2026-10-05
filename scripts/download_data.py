@@ -117,6 +117,11 @@ def main() -> int:
     ap.add_argument("--with-optional", action="store_true", help="качать и опциональные (большие) показатели")
     ap.add_argument("--only", default="", help="группы через запятую: sber,rosstat,tochno_regions,tochno_bdmo")
     ap.add_argument("--verify", action="store_true", help="пересчитать SHA-256 уже скачанных файлов")
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="перекачать и уже скачанные файлы (атомарно: при ошибке остаётся прежняя версия, это не считается неудачей)",
+    )
     args = ap.parse_args()
 
     cfg = load_yaml("sources.yaml")
@@ -130,10 +135,12 @@ def main() -> int:
     RAW.mkdir(parents=True, exist_ok=True)
     sums = read_sums()
     failed = []
+    kept = []  # --refresh: не скачалось, но прежняя версия есть — работаем с ней
+    changed = 0
     for i, j in enumerate(jobs, 1):
         dest = RAW / j["dest"]
         rel = dest.relative_to(RAW).as_posix()
-        if dest.exists() and rel in sums:
+        if dest.exists() and rel in sums and not args.refresh:
             if args.verify and sha256_file(dest) != sums[rel]:
                 print(f"[{i}/{len(jobs)}] ХЭШ НЕ СОВПАЛ, перекачиваю: {rel}")
             else:
@@ -145,7 +152,9 @@ def main() -> int:
         try:
             is_sber = "sberindex.ru" in j["url"] or "sberbank" in j["url"]
             download(s, j["url"], dest, api=j.get("api", False), pause=15 if is_sber else 5)
-            sums[rel] = sha256_file(dest)
+            new = sha256_file(dest)
+            changed += sums.get(rel) != new
+            sums[rel] = new
             write_sums(sums)
             if j["group"] == "sber" and dest.suffix in (".zip", ".rar"):
                 unpack(dest)
@@ -153,11 +162,18 @@ def main() -> int:
                 time.sleep(5)  # WAF СберИндекса ограничивает частоту запросов
         except Exception as e:  # noqa: BLE001 — любую ошибку пишем в FAILED.txt и идём дальше
             print(f"   ОШИБКА: {e}")
-            failed.append(f"{datetime.now():%Y-%m-%d %H:%M:%S}\t{j['id']}\t{j['url']}\t{e}")
+            line = f"{datetime.now():%Y-%m-%d %H:%M:%S}\t{j['id']}\t{j['url']}\t{e}"
+            if args.refresh and dest.exists():
+                print("   оставлена прежняя версия файла")
+                kept.append(line)
+            else:
+                failed.append(line)
 
     write_sums(sums)
-    FAILED.write_text("".join(f + "\n" for f in failed), encoding="utf-8")
+    FAILED.write_text("".join(f + "\n" for f in failed + kept), encoding="utf-8")
     print(f"Готово: {len(jobs) - len(failed)} из {len(jobs)}; неудач: {len(failed)} (см. {FAILED})")
+    if args.refresh:
+        print(f"Изменилось файлов: {changed}; не скачалось, оставлена прежняя версия: {len(kept)}")
     return 1 if failed else 0
 
 

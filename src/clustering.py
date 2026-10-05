@@ -47,6 +47,56 @@ def _fit_ward(X, W, p):
     return AgglomerativeClustering(n_clusters=p["k"], linkage="ward").fit_predict(X)
 
 
+def _ward_sample(n: int, max_n: int | None, seed: int) -> np.ndarray:
+    """Индексы строк для дерева Уорда: все, если n ≤ max_n; иначе случайная подвыборка (память O(n²))."""
+    if not max_n or n <= max_n:
+        return np.arange(n)
+    return np.sort(np.random.default_rng(seed).choice(n, size=int(max_n), replace=False))
+
+
+def ward_linkage(X, max_n: int | None = None, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
+    """Дерево Уорда (матрица слияний scipy) и индексы строк, по которым оно построено."""
+    from scipy.cluster.hierarchy import linkage
+
+    X = np.asarray(X, dtype=float)
+    idx = _ward_sample(len(X), max_n, seed)
+    return linkage(X[idx], method="ward"), idx
+
+
+def ward_jumps(Z: np.ndarray, k_range=(2, 10)) -> pd.DataFrame:
+    """Расстояние слияния при переходе от k к k−1 кластерам и его скачок.
+
+    Высота слияния, после которого остаётся k−1 кластер, — Z[n−k, 2]. Большой скачок между высотами
+    соседних слияний означает, что дальше объединяются далёкие друг от друга группы, — разумно
+    остановиться на k кластерах. Рекомендуемое k — с наибольшим относительным скачком.
+    """
+    h = Z[:, 2]
+    n = len(h) + 1
+    rows = []
+    for k in range(k_range[0], k_range[1] + 1):
+        if k >= n:
+            break
+        up, down = h[n - k], h[n - k - 1]  # слияние k → k−1 и предыдущее (k+1 → k)
+        rows.append({"k": k, "высота слияния k→k−1": up, "скачок": up - down, "скачок, раз": up / down})
+    return pd.DataFrame(rows)
+
+
+def ward_centroids(X, k: int, max_n: int | None = None, seed: int = 42) -> np.ndarray:
+    """Центроиды k кластеров Уорда (по подвыборке, если строк больше max_n)."""
+    from scipy.cluster.hierarchy import fcluster
+
+    X = np.asarray(X, dtype=float)
+    Z, idx = ward_linkage(X, max_n, seed)
+    lab = fcluster(Z, t=k, criterion="maxclust")
+    return np.vstack([X[idx][lab == c].mean(axis=0) for c in np.unique(lab)])
+
+
+def _fit_ward_kmeans(X, W, p):
+    """Уорд → центроиды → k-means (один запуск из центров Уорда, без случайных стартов)."""
+    C = ward_centroids(X, p["k"], p.get("ward_max_n"), p["seed"])
+    return KMeans(n_clusters=len(C), init=C, n_init=1, random_state=p["seed"]).fit_predict(X)
+
+
 def _fit_gmm(X, W, p):
     g = GaussianMixture(
         n_components=p["k"],
@@ -122,6 +172,14 @@ def _external(name: str, module: str):
     return importlib.import_module(module)
 
 
+def _kefrin_n_init(X, p) -> int:
+    """Число случайных стартов KEFRiN: на больших выборках (вся Россия, ~2 200 МО) один старт
+    стоит ~4 с, поэтому берём n_init_large вместо n_init (см. configs/clustering.yaml)."""
+    if len(X) > p.get("large_n", float("inf")):
+        return int(p.get("n_init_large", p.get("n_init", 10)))
+    return int(p.get("n_init", 10))
+
+
 def _fit_kefrin(X, W, p):
     """KEFRiN (Shalileh, Mirkin 2022): расширенный k-means по признакам и строкам матрицы сети.
 
@@ -140,7 +198,7 @@ def _fit_kefrin(X, W, p):
         xi=p.get("xi", 1.0),
         distance_metric=metric,
         random_state=p["seed"],
-        n_init=p.get("n_init", 10),
+        n_init=_kefrin_n_init(X, p),
         preprocessing_y=kf.PreprocessingMethod("none"),
         preprocessing_p=kf.PreprocessingMethod("none"),
     )
@@ -173,6 +231,7 @@ def _fit_canus(X, W, p):
 FAMILIES = {
     "kmeans": "attributes",
     "ward": "attributes",
+    "ward_kmeans": "attributes",
     "gmm": "attributes",
     "leiden": "graph",
     "spectral": "graph",
@@ -217,6 +276,50 @@ def fit_pooled(X_panel: pd.DataFrame, params: dict) -> pd.Series:
     изменение его показателей, а не перекластеризацию года. Возвращает метки с тем же индексом.
     """
     if FAMILIES.get(params["method"]) != "attributes":
-        raise ValueError("Режим pooled доступен только для методов по атрибутам (kmeans, ward, gmm)")
+        raise ValueError("Режим pooled доступен только для методов по атрибутам (kmeans, ward, ward_kmeans, gmm)")
     lab = fit(X_panel.to_numpy(), None, params)
     return pd.Series(lab, index=X_panel.index, name="label")
+
+
+# ============================================================================ нумерация K1…Kn
+def order_by_value(labels, values, descending: bool = True) -> np.ndarray:
+    """Перенумеровать кластеры по медиане показателя: 0 — самые высокие значения (подпись K1).
+
+    labels и values — одинаковой длины (values — например, ВМП на душу в ценах базового года).
+    Кластеры, где показатель неизвестен у всех МО, — в конце (в порядке исходных номеров).
+    """
+    lab = np.asarray(labels)
+    med = pd.Series(np.asarray(values, dtype=float)).groupby(lab).median()
+    med = med.reindex(np.unique(lab))
+    key = -med if descending else med
+    order = sorted(med.index, key=lambda c: (np.isnan(key[c]), key[c] if np.isfinite(key[c]) else 0, c))
+    m = {c: i for i, c in enumerate(order)}
+    return np.array([m[c] for c in lab], dtype=int)
+
+
+def code(label: int) -> str:
+    """Подпись кластера: K1, K2, … (label 0 → K1)."""
+    return f"K{int(label) + 1}"
+
+
+def order_labels(
+    labels: pd.Series, price_params: dict | None = None, year: int | None = None, indicator: str | None = None
+) -> pd.Series:
+    """Метки, перенумерованные по показателю (по умолчанию ВМП на душу в ценах базового года): 0 → K1.
+
+    labels — индекс (territory_id, year) (режим pooled / сквозные типы) или territory_id и тогда нужен year.
+    Показатель — configs/clustering.yaml → order_by; денежный пересчитывается в цены base_year (src/prices.py).
+    """
+    from src import prices
+    from src.io import PROCESSED
+
+    ind = indicator or default_params().get("order_by", "gmp_pc")
+    w = pd.read_parquet(PROCESSED / "indicators_wide.parquet", columns=["territory_id", "year", "region_code", ind])
+    pp = prices.price_params({**(price_params or {}), "values": "real"})
+    w = prices.to_real(w, [ind], pp["base_year"], pp["deflator_scope"], pp["spatial_price_adjustment"])
+    v = w.set_index(["territory_id", "year"])[ind]
+    if isinstance(labels.index, pd.MultiIndex):
+        vals = v.reindex(labels.index).to_numpy()
+    else:
+        vals = v.reindex(pd.MultiIndex.from_arrays([labels.index, np.full(len(labels), year)])).to_numpy()
+    return pd.Series(order_by_value(labels.to_numpy(), vals), index=labels.index, name=labels.name)

@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from common import CATEGORICAL, cluster_color, downloads, layout, mo, registry, sample_ids, sidebar
+from common import (
+    CATEGORICAL,
+    cluster_color,
+    downloads,
+    layout,
+    mo,
+    real_prices,
+    registry,
+    sample_ids,
+    sidebar,
+    unit_label,
+)
 
-from src import convergence
-from src.io import PROCESSED, load_yaml
+from src import clustering, convergence
+from src.io import load_yaml
 
 st.set_page_config(page_title="Конвергенция", layout="wide")
 side = sidebar()
@@ -21,41 +34,40 @@ SERIES = {
     "gmp_basic": "ВМП на душу, реальный — базовый метод (единый для 2013–2024)",
     "gmp_sectoral": "ВМП на душу, реальный — отраслевой метод (2017–2024)",
 }
-money = [c for c in reg.index if c.endswith("_cpi")] + [
-    c
-    for c in ["wage_real", "hhi_emp", "density", "old_age_share", "budget_own_share", "living_space_pc"]
-    if c in reg.index
+mon = reg["monetary"].fillna(False).astype(bool) if "monetary" in reg.columns else pd.Series(False, index=reg.index)
+money = [c for c in reg.index if mon.get(c) and c != "gmp_pc" and reg.at[c, "parent"] == c] + [
+    c for c in ["hhi_emp", "density", "old_age_share", "budget_own_share", "living_space_pc"] if c in reg.index
 ]
 opts = list(SERIES) + money
 c1, c2 = st.columns([2, 1])
 var = c1.selectbox("Показатель", opts, format_func=lambda c: SERIES.get(c) or f"{reg.at[c, 'name']} ({c})")
 yr_default = (2017, 2024) if var == "gmp_sectoral" else (2013, 2024)
 y0, y1 = c2.slider("Окно", 2013, 2024, yr_default)
-if var.startswith("gmp_") and not var.endswith("_cpi"):
+pr = real_prices(side)
+if var in SERIES or mon.get(var):
+    st.caption(
+        f"Денежные показатели — в ценах {pr['base_year']} г. ({unit_label('gmp_pc' if var in SERIES else var, side, True)}). "
+        "Конвергенция всегда считается в реальных ценах, даже если в боковой панели выбраны текущие."
+    )
+if var in SERIES:
     st.caption(
         "ВМП — расчётная оценка команды. Для длинного окна берётся базовый метод: склейка базового (до 2016) и "
         "отраслевого (с 2017) создала бы искусственный скачок."
     )
 
 
-@st.cache_data(show_spinner=False)
-def series(var: str) -> pd.DataFrame:
+@st.cache_data(show_spinner=False, max_entries=16)
+def series(var: str, pr_key: str) -> pd.DataFrame:
     """territory_id, year, value — МО, действующие в конце окна (с достроенными значениями преемников)."""
     m = mo()
     if var in SERIES:
-        g = pd.read_parquet(PROCESSED / "gmp.parquet")
-        d = g[g["method"].eq("basic" if var == "gmp_basic" else "sectoral")][
-            ["territory_id", "year", "gmp_pc_real", "valid_in_year", "derived"]
-        ].rename(columns={"gmp_pc_real": "value"})
+        spec = {"source": "gmp", "method": "basic" if var == "gmp_basic" else "sectoral", "column": "gmp_pc"}
     else:
-        d = pd.read_parquet(
-            PROCESSED / "indicators_wide.parquet", columns=["territory_id", "year", var, "valid_in_year", "derived"]
-        ).rename(columns={var: "value"})
-    d = d[(d["valid_in_year"] | d["derived"]) & d["territory_id"].isin(m.loc[m["active"], "territory_id"])]
-    return d[["territory_id", "year", "value"]].dropna()
+        spec = {"source": "indicators", "column": var}
+    return convergence.load_series(spec, m.loc[m["active"], "territory_id"], json.loads(pr_key))
 
 
-d = series(var)
+d = series(var, json.dumps(pr, sort_keys=True))
 d = d[d["year"].between(y0, y1)]
 ids = sample_ids(side)
 if (y1 - y0 + 1) < cc["min_years_reliable"]:
@@ -69,7 +81,7 @@ types = st.session_state.get("types_last")
 if types:
     t = pd.Series(types)
     for k in sorted(t.unique()):
-        samples[f"Тип {k}"] = d[d["territory_id"].isin(set(t.index[t.eq(k)]) & ids)]
+        samples[clustering.code(k)] = d[d["territory_id"].isin(set(t.index[t.eq(k)]) & ids)]
     st.caption("Типы — сквозные типы последнего года со страницы «Динамика».")
 else:
     st.caption("Чтобы считать конвергенцию по типам, откройте страницу «Динамика» (типы берутся оттуда).")
@@ -96,14 +108,14 @@ res = {
 st.subheader("σ-конвергенция: разброс ln y по МО")
 fig = go.Figure()
 for i, (name, (st_, *_)) in enumerate(res.items()):
-    color = CATEGORICAL[i] if not name.startswith("Тип") else cluster_color(int(name.split()[1]))
+    color = cluster_color(int(name[1:]) - 1) if name[:1] == "K" and name[1:].isdigit() else CATEGORICAL[i]
     fig.add_trace(
         go.Scatter(
             x=st_["year"],
             y=st_["sd_log"],
             mode="lines+markers",
             name=name,
-            line=dict(width=2, color=color, dash="dot" if name.startswith("Тип") else "solid"),
+            line=dict(width=2, color=color, dash="dot" if name[:1] == "K" else "solid"),
             marker=dict(size=8),
             hovertemplate=name + "<br>%{x}: σ = %{y:.3f}<extra></extra>",
         )

@@ -63,7 +63,7 @@ def test_imputed_share_in_unit_interval(data):
 @needs_gmp
 def test_gmp_parquet_columns():
     g = pd.read_parquet(PROCESSED / "gmp.parquet")
-    for c in ["territory_id", "year", "method", "gmp", "gmp_pc", "gmp_pc_real", "gmp_imputed_share"]:
+    for c in ["territory_id", "year", "method", "gmp", "gmp_pc", "gmp_imputed_share", "region_code"]:
         assert c in g
     assert not g.duplicated(["territory_id", "year", "method"]).any()
 

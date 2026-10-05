@@ -7,8 +7,10 @@
                                            boundary_change, gmp_method_used) + все показатели
   data/processed/indicators.parquet        long: territory_id, year, indicator, value
   data/processed/indicator_registry.parquet  раскрытый реестр (одна строка на показатель)
-  data/processed/indicators_corr_dfo.csv     корреляции Спирмена по ДФО
-  data/processed/indicators_variance_dfo.csv разброс показателей по ДФО
+  data/processed/price_levels.parquet      уровни цен (src/prices.py): ИПЦ, дефлятор ВРП, инвест., ИЦП
+  data/processed/price_basket.parquet      стоимость фиксированного набора субъекта / Россия
+  data/processed/indicators_corr_{ru,dfo}.csv     корреляции Спирмена: вся Россия / ДФО
+  data/processed/indicators_variance_{ru,dfo}.csv разброс показателей: вся Россия / ДФО
   reports/INDICATORS.md
 """
 
@@ -25,6 +27,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from src import indicators as ind  # noqa: E402
+from src import prices  # noqa: E402
 from src.io import PROCESSED, REPORTS  # noqa: E402
 from src.normalize import prepare  # noqa: E402
 
@@ -44,6 +47,7 @@ def md(df: pd.DataFrame, fmt: str = "{:.2f}") -> str:
 
 
 def main() -> int:
+    prices.save()
     ctx = ind.Context.load()
     vals = ind.compute_all(ctx)
     meta = ctx.wide[["valid_in_year", "derived"]].copy()
@@ -67,27 +71,34 @@ def main() -> int:
         PROCESSED / "indicator_registry.parquet", index=False
     )
 
-    # ---------------- ДФО: покрытие, разброс, корреляции (срез действующих МО, 2017–2024)
-    d = wide[wide["valid_in_year"] & wide["is_dfo"]]
-    core = d[d.index.get_level_values("year").to_series().between(*CORE_YEARS).values]
-    cov = d[num].notna().groupby(level="year").mean().T * 100
+    # ---------------- покрытие, разброс, корреляции (срез действующих МО, 2017–2024):
+    # основная выборка — вся Россия; ДФО — пресет (файлы *_dfo.csv для интерфейса)
     feats = [c for c in num if reg.set_index("code").get("block", pd.Series()).get(c) != "quality"]
-    usable = [c for c in feats if core[c].notna().mean() > 0.5]
     logc = reg.loc[reg["log"].fillna(False).astype(bool), "code"].tolist()
-    z = prepare(core, usable, log_columns=logc, method="minmax", scope="panel")
-    var = pd.DataFrame(
-        {
-            "среднее": core[usable].mean(),
-            "медиана": core[usable].median(),
-            "коэф. вариации": core[usable].std() / core[usable].mean().abs(),
-            "дисперсия после min-max (с логарифмом по реестру)": z.var(),
-            "покрытие 2017–2024, %": 100 * core[usable].notna().mean(),
-        }
-    )
-    var.index.name = "показатель"
-    var.to_csv(PROCESSED / "indicators_variance_dfo.csv", encoding="utf-8")
-    corr = core[usable].corr(method="spearman", min_periods=100)
-    corr.to_csv(PROCESSED / "indicators_corr_dfo.csv", encoding="utf-8")
+    stats = {}
+    for tag, mask in (("ru", wide["valid_in_year"]), ("dfo", wide["valid_in_year"] & wide["is_dfo"])):
+        # денежные — в ценах базового года (параметры по умолчанию), как в сети и кластерах
+        pp = prices.price_params()
+        d = prices.to_real(wide[mask], num, pp["base_year"], pp["deflator_scope"], pp["spatial_price_adjustment"])
+        core = d[d.index.get_level_values("year").to_series().between(*CORE_YEARS).values]
+        cov = d[num].notna().groupby(level="year").mean().T * 100
+        usable = [c for c in feats if core[c].notna().mean() > 0.5]
+        z = prepare(core, usable, log_columns=logc, method="minmax", scope="panel")
+        var = pd.DataFrame(
+            {
+                "среднее": core[usable].mean(),
+                "медиана": core[usable].median(),
+                "коэф. вариации": core[usable].std() / core[usable].mean().abs(),
+                "дисперсия после min-max (с логарифмом по реестру)": z.var(),
+                "покрытие 2017–2024, %": 100 * core[usable].notna().mean(),
+            }
+        )
+        var.index.name = "показатель"
+        var.to_csv(PROCESSED / f"indicators_variance_{tag}.csv", encoding="utf-8")
+        corr = core[usable].corr(method="spearman", min_periods=100)
+        corr.to_csv(PROCESSED / f"indicators_corr_{tag}.csv", encoding="utf-8")
+        stats[tag] = (cov, usable, var, corr)
+    cov, usable, var, corr = stats["ru"]
 
     names = reg.set_index("code")["name"]
     out = [
@@ -96,31 +107,27 @@ def main() -> int:
         "Сгенерировано `scripts/build_indicators.py`. Реестр — `configs/indicators.yaml`, "
         "формулы — `src/indicators.py`, раскрытый реестр для интерфейса — `data/processed/indicator_registry.parquet`.",
         "",
-        f"Всего колонок-показателей: {len(num)} (включая отраслевые и версии «_cpi» в ценах {ctx.params['base_year']} г.).",
+        f"Всего колонок-показателей: {len(num)} (включая отраслевые). Денежные хранятся в текущих ценах; разброс и "
+        f"корреляции ниже — в ценах {prices.price_params()['base_year']} г. (src/prices.py, дефлятор — поле deflator реестра).",
         "",
-        "## 1. Покрытие действующих МО ДФО по годам, %",
+        "## 1. Покрытие действующих МО России по годам, %",
         "",
     ]
-    base = [
-        c
-        for c in num
-        if not c.startswith(("emp_share_", "lq_", "gmp_structure_", "spend_share_")) and not c.endswith("_cpi")
-    ]
+    base = [c for c in num if not c.startswith(("emp_share_", "lq_", "gmp_structure_", "spend_share_"))]
     t = cov.loc[base].round(0)
     t.insert(0, "показатель", [names.get(c, c) for c in t.index])
     out += [md(t.reset_index().rename(columns={"index": "код"}), "{:.0f}"), ""]
     out += [
-        "## 2. Пары сильно связанных показателей (|ρ Спирмена| ≥ 0,8), ДФО, 2017–2024",
+        "## 2. Пары сильно связанных показателей (|ρ Спирмена| ≥ 0,8), Россия, 2017–2024",
         "",
         "Кандидаты на исключение дублей: в сети и кластеризации из такой пары обычно достаточно одного. "
         "Не показаны пары одной величины в разных шкалах (emp_share_k / lq_k / lq_ru_k — внутри года "
-        "это одно и то же с точностью до множителя; x / x_cpi / x_real).",
+        "это одно и то же с точностью до множителя).",
         "",
     ]
 
     def family(c: str) -> str:
-        """emp_share_H, lq_H, lq_ru_H → «H»; wage_cpi → wage: одна величина в разных шкалах."""
-        c = c.removesuffix("_cpi").removesuffix("_real")
+        """emp_share_H, lq_H, lq_ru_H → «H»: одна величина в разных шкалах."""
         for pre in ("emp_share_", "lq_ru_", "lq_"):
             if c.startswith(pre):
                 return "sector_" + c[len(pre) :]
@@ -156,7 +163,7 @@ def main() -> int:
         "",
     ]
     out += [
-        "## 3. Разброс показателей по ДФО (2017–2024)",
+        "## 3. Разброс показателей по России (2017–2024)",
         "",
         "Малая дисперсия после нормировки — показатель слабо различает МО (например, коэффициенты локализации "
         "редких отраслей).",

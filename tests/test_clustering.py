@@ -22,7 +22,7 @@ def toy():
     return X, W * A, y
 
 
-METHODS = ["kmeans", "ward", "gmm", "leiden", "spectral", "kefrin", "canus"]
+METHODS = ["kmeans", "ward", "ward_kmeans", "gmm", "leiden", "spectral", "kefrin", "canus"]
 
 
 @pytest.mark.parametrize("method", METHODS)
@@ -57,3 +57,52 @@ def test_graph_method_needs_graph(toy):
     X, _, _ = toy
     with pytest.raises(ValueError):
         clustering.fit(X, None, {"method": "leiden", "k": 3})
+
+
+# ---------------------------------------------------------------- Уорд + k-means (этап 4 доработки)
+def test_ward_kmeans_starts_from_ward_centroids(toy):
+    """k-means запускается из центроидов Уорда и не ухудшает их: инерция ≤ инерции разбиения Уорда."""
+    from sklearn.cluster import KMeans
+
+    X, _, _ = toy
+    C = clustering.ward_centroids(X, 3)
+    lab = clustering.fit(X, None, {"method": "ward_kmeans", "k": 3, "seed": 42})
+    km = KMeans(n_clusters=3, init=C, n_init=1).fit(X)
+    assert adjusted_rand_score(km.labels_, lab) == 1.0
+    ward = clustering.fit(X, None, {"method": "ward", "k": 3, "seed": 42})
+    inertia = lambda lb: sum(((X[lb == c] - X[lb == c].mean(0)) ** 2).sum() for c in np.unique(lb))  # noqa: E731
+    assert inertia(lab) <= inertia(ward) + 1e-9
+
+
+def test_ward_subsample_for_large_n():
+    X, _ = make_blobs(n_samples=3000, centers=4, cluster_std=0.4, random_state=1)
+    Z, idx = clustering.ward_linkage(X, max_n=500)
+    assert len(idx) == 500 and len(Z) == 499
+    lab = clustering.fit(X, None, {"method": "ward_kmeans", "k": 4, "seed": 42, "ward_max_n": 500})
+    assert set(lab) == {0, 1, 2, 3}
+
+
+def test_ward_jumps_pick_true_k():
+    X, _ = make_blobs(n_samples=200, centers=4, cluster_std=0.3, random_state=3)
+    Z, _ = clustering.ward_linkage(X)
+    jt = clustering.ward_jumps(Z, (2, 8))
+    assert jt[jt["k"].ge(3)].sort_values("скачок, раз", ascending=False)["k"].iloc[0] == 4
+
+
+def test_pooled_ward_kmeans_same_labels_for_same_point():
+    import pandas as pd
+
+    X, _ = make_blobs(n_samples=60, centers=3, cluster_std=0.3, random_state=0)
+    idx = pd.MultiIndex.from_product([range(30), [2020, 2021]], names=["territory_id", "year"])
+    Xp = pd.DataFrame(X, index=idx)
+    Xp.loc[(slice(None), 2021), :] = Xp.xs(2020, level="year").to_numpy()  # показатели не изменились
+    lab = clustering.fit_pooled(Xp, {"method": "ward_kmeans", "k": 3, "seed": 42})
+    assert (lab.xs(2020, level="year") == lab.xs(2021, level="year")).all()  # → тип не меняется
+
+
+def test_order_by_value_k1_is_highest():
+    lab = np.array([0, 0, 1, 1, 2, 2, 3])
+    val = np.array([10, 12, 100, 90, 50, 55, np.nan])
+    out = clustering.order_by_value(lab, val)
+    assert list(out) == [2, 2, 0, 0, 1, 1, 3]  # K1 — кластер 1 (медиана 95), неизвестный — последним
+    assert clustering.code(0) == "K1"

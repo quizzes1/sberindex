@@ -33,9 +33,6 @@ sectoral_years: [2017, 2024]
 basic_years: [2013, 2024]
 default_method: sectoral     # для показателя gmp_pc; для лет без метода 2 берётся basic (флаг)
 
-# Реальное выражение: дефлятор ВРП субъекта = (ВРП_t / ВРП_{t-1}) / (ИФО_t / 100), цепной
-base_year: 2017
-
 # Варианты для проверки чувствительности (переопределяют by_section / imputation_weight)
 sensitivity:
   A_payroll: {by_section: {A: payroll}}

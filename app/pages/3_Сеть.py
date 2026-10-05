@@ -28,7 +28,7 @@ side = sidebar()
 st.title("Сеть")
 
 
-@st.cache_data(show_spinner="Строю сеть…", max_entries=16)
+@st.cache_data(show_spinner="Строю сеть…", max_entries=4)  # сеть всей России — ~120 МБ
 def build(params_json: str, year: int):
     p = json.loads(params_json)
     net = network.build(p, years=[year])[year]
@@ -37,9 +37,7 @@ def build(params_json: str, year: int):
 
 reg = registry().set_index("code")
 defaults = network.default_params()
-feat_pool = [
-    c for c in reg.index if reg.at[c, "block"] in ("economy", "social", "consumption") and not c.endswith("_cpi")
-]
+feat_pool = [c for c in reg.index if reg.at[c, "block"] in ("economy", "social", "consumption")]
 
 with st.form("net"):
     st.markdown("**Экономическое расстояние** — признаки и веса a_k")
