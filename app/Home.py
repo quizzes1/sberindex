@@ -104,7 +104,7 @@ if t1p.exists() and t2p.exists():
     view["траектория"] = t2["траектория"]
 
     def row_style(r):
-        bg = f"background-color: #{summary.tint(tcol.get(r['траектория'], '#ffffff'))}"
+        bg = summary.row_css(r["траектория"])
         return [
             f"background-color: {cluster_color(int(r[c].split()[0][1:]) - 1)}; color: white"
             if c in years and r[c] != "—"
@@ -130,7 +130,7 @@ if t1p.exists() and t2p.exists():
                 lambda r: [
                     f"background-color: {cluster_color(int(r[c][1:]) - 1)}; color: white"
                     if c in ycols and isinstance(r[c], str) and r[c].startswith("K")
-                    else f"background-color: #{summary.tint(tcol.get(r['траектория'], '#ffffff'))}"
+                    else summary.row_css(r["траектория"])
                     for c in r.index
                 ],
                 axis=1,

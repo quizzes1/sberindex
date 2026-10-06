@@ -508,3 +508,12 @@ def table2_html(subj: pd.DataFrame, summ: pd.DataFrame, periods: list[int], titl
         f"<table><thead><tr><th>территория</th><th>МО</th>{thead}</tr></thead><tbody>{srows}</tbody></table>"
         "</body></html>"
     )
+
+
+def row_css(traj: str) -> str:
+    """CSS строки таблицы 2 в интерфейсе: светлый оттенок цвета траектории и тёмный текст (читается и в тёмной
+    теме Streamlit); «стабильный» и «нет данных» — без фона и цвета, как обычные строки темы."""
+    if traj in ("стабильный", "нет данных"):
+        return ""
+    c = cfg()["periods"]["trajectory_colors"].get(traj)
+    return f"background-color: #{tint(c)}; color: #1f1f1f" if c else ""

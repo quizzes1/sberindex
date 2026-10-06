@@ -101,3 +101,32 @@ def test_sw_bounds_and_random_partition(blobs):
 def test_directions_defined():
     for k in (*icvi.FEATURE_INDICES, *icvi.NETWORK_INDICES):
         assert icvi.BETTER[k] in (-1, 1)
+
+
+# ---------------------------------------------------------------- метод локтя
+def test_wcss_equals_kmeans_inertia():
+    from sklearn.cluster import KMeans
+    from sklearn.datasets import make_blobs
+
+    X, _ = make_blobs(n_samples=150, centers=3, random_state=0)
+    km = KMeans(n_clusters=3, n_init=5, random_state=0).fit(X)
+    assert icvi.wcss(X, km.labels_) == pytest.approx(km.inertia_)
+    lab = km.labels_.copy()
+    lab[:10] = -1  # без метки — не учитывается
+    assert icvi.wcss(X, lab) < km.inertia_
+
+
+def test_elbow_finds_true_k():
+    from sklearn.cluster import KMeans
+    from sklearn.datasets import make_blobs
+
+    X, _ = make_blobs(n_samples=400, centers=4, cluster_std=0.6, random_state=7)
+    ks = list(range(2, 11))
+    w = [KMeans(n_clusters=k, n_init=5, random_state=0).fit(X).inertia_ for k in ks]
+    assert icvi.elbow(ks, w) == 4
+
+
+def test_elbow_degenerate():
+    assert icvi.elbow([2, 3], [10.0, 5.0]) is None
+    assert icvi.elbow([2, 3, 4], [1.0, 1.0, 1.0]) is None
+    assert icvi.elbow([2, 3, 4, 5], [100.0, 20.0, 15.0, 12.0]) == 3

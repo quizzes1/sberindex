@@ -50,6 +50,15 @@ def consensus_k(tab: pd.DataFrame) -> pd.Series:
     return pd.concat(ranks, axis=1).mean(axis=1)
 
 
+def add_wcss(S: pd.DataFrame, L: pd.DataFrame, nets: dict) -> pd.DataFrame:
+    """WCSS (для метода локтя) по сохранённым меткам — если сетка посчитана до появления WCSS."""
+    rows = []
+    for (y, m, k), g in L.groupby(["year", "method", "k"]):
+        X = nets[y].X.reindex(g["territory_id"].to_numpy()).to_numpy()
+        rows.append({"year": y, "method": m, "k": k, "WCSS": icvi.wcss(X, g["label"].to_numpy())})
+    return S.drop(columns="WCSS", errors="ignore").merge(pd.DataFrame(rows), on=["year", "method", "k"], how="left")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
@@ -59,6 +68,7 @@ def main() -> int:
         help="досчитать только эти методы и влить в готовую сетку data/clusters/{hash} (остальные методы не трогать)",
     )
     ap.add_argument("--skip", nargs="+", default=[], help="не считать эти методы (сетка без них, не слияние)")
+    ap.add_argument("--report-only", action="store_true", help="только пересобрать отчёт по готовой сетке")
     a = ap.parse_args()
     cp = clustering.default_params()
     netp = network.merge_params(network.default_params(), cp.get("network_override"))
@@ -76,7 +86,7 @@ def main() -> int:
             methods.pop(m)
     ks = list(range(cp["k_range"][0], cp["k_range"][1] + 1))
     labels, scores = [], []
-    for y, net in nets.items():
+    for y, net in ({} if a.report_only else nets).items():
         X = net.X.to_numpy()
         Wsp = net.W * net.A
         for m, mp in methods.items():
@@ -95,14 +105,20 @@ def main() -> int:
             print(f"{y} {m}: {time.time() - t:.1f} с", flush=True)
     out = CLUSTERS / h
     out.mkdir(parents=True, exist_ok=True)
-    L = pd.concat(labels, ignore_index=True)
-    S = pd.DataFrame(scores)
+    if a.report_only:
+        L, S = pd.read_parquet(out / "labels.parquet"), pd.read_parquet(out / "icvi.parquet")
+        methods = {m: v for m, v in cp["methods"].items() if m in set(S["method"])}
+    else:
+        L = pd.concat(labels, ignore_index=True)
+        S = pd.DataFrame(scores)
     if a.only and (out / "labels.parquet").exists():
         # влить в готовую сетку: строки пересчитанных методов заменяются, остальные остаются
         L0, S0 = pd.read_parquet(out / "labels.parquet"), pd.read_parquet(out / "icvi.parquet")
         L = pd.concat([L0[~L0["method"].isin(list(methods))], L], ignore_index=True)
         S = pd.concat([S0[~S0["method"].isin(list(methods))], S], ignore_index=True)
         methods = {m: v for m, v in cp["methods"].items() if m in set(S["method"])}
+    if "WCSS" not in S or S["WCSS"].isna().any():
+        S = add_wcss(S, L, nets)
     L.to_parquet(out / "labels.parquet", index=False)
     S.to_parquet(out / "icvi.parquet", index=False)
     (out / "params.json").write_text(
@@ -153,9 +169,10 @@ def main() -> int:
                 "k по AVU": int(t["AVU"].idxmin()),
                 "k по MQ": int(t["MQ"].idxmax()),
                 "согласованное k (средний ранг)": kbest,
+                "k по локтю (WCSS)": icvi.elbow(t.index, t["WCSS"]),
             }
         )
-        tt = t.reset_index()[["k", "K", "SW", "CH", "DBI", "S_Dbw", "AVI", "AVU", "ANUI", "MQ"]]
+        tt = t.reset_index()[["k", "K", "SW", "CH", "DBI", "S_Dbw", "AVI", "AVU", "ANUI", "MQ", "WCSS"]]
         tt["средний ранг"] = rk.values
         rep += [f"### {m}", "", md(tt), ""]
     B = pd.DataFrame(best)
@@ -165,6 +182,11 @@ def main() -> int:
         "«Согласованное k» — k с наименьшим средним рангом по семи индексам (SW, CH, S_Dbw, AVI, AVU, ANUI, MQ). "
         "Индексы часто расходятся: SW, CH и AVI тянут к малым k, MQ — к большим, а S_Dbw на этих данных монотонно убывает с ростом k и выбирает верхнюю границу диапазона (k = 9–10) — поэтому сам по себе он для выбора k не годится; окончательный "
         "выбор k — за аналитиком (страница «Кластеры» интерфейса).",
+        "",
+        "**Метод локтя.** WCSS — внутрикластерная сумма квадратов в пространстве нормированных признаков; с ростом k "
+        "она всегда убывает. «Локоть» — k, после которого убывание резко замедляется: точка кривой WCSS(k), наиболее "
+        "удалённая от прямой между первой и последней точкой (обе оси приведены к [0, 1], как в методе Kneedle). "
+        "В средний ранг WCSS не входит — сама по себе она всегда «за» большее k.",
         "",
         md(B, "{}"),
         "",

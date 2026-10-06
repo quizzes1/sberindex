@@ -49,3 +49,4 @@ def test_clusters_pooled_ward_kmeans_with_dendrogram():
     assert next(s for s in at.selectbox if s.label == "Метод").value == "ward_kmeans"
     assert any(e.label.startswith("Дендрограмма") for e in at.expander)
     assert any("K1" in c.value for c in at.caption)
+    assert any(m.value.startswith("**Локоть: k =") for m in at.markdown)  # метод локтя в выборе k

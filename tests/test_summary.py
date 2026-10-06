@@ -146,3 +146,10 @@ def test_table2_on_dfo():
     assert ws.cell(row=3, column=2).fill.fgColor.rgb not in ("00000000", None)  # строка окрашена по траектории
     html = summary.table2_html(st, sm, per, "тест")
     assert html.count("<tr>") >= len(st) and "K" in html
+
+
+def test_row_css_readable_in_dark_theme():
+    """Строки «стабильный» и «нет данных» — без фона (наследуют тему); цветные — с явным тёмным текстом."""
+    assert summary.row_css("стабильный") == "" and summary.row_css("нет данных") == ""
+    for tr in ("рост", "снижение", "колебание"):
+        assert "color: #1f1f1f" in summary.row_css(tr) and "background-color" in summary.row_css(tr)

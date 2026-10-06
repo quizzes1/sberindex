@@ -172,10 +172,40 @@ def mq(A: np.ndarray, labels: np.ndarray) -> float:
 
 
 # ============================================================================ всё сразу
+def wcss(X: np.ndarray, labels: np.ndarray) -> float:
+    """Внутрикластерная сумма квадратов (WCSS, инерция): Σ_k Σ_{i∈k} ‖x_i − c_k‖² по нормированным признакам.
+
+    Для метода локтя: с ростом k всегда убывает; «локоть» — k, после которого убывание резко замедляется.
+    Метки < 0 (нет метки) не учитываются. В BETTER не входит: само по себе всегда «лучше» большее k.
+    """
+    X, labels = np.asarray(X, dtype=float), np.asarray(labels)
+    m = labels >= 0
+    X, labels = X[m], labels[m]
+    return float(sum(((X[labels == c] - X[labels == c].mean(axis=0)) ** 2).sum() for c in np.unique(labels)))
+
+
+def elbow(ks, values) -> int | None:
+    """k «локтя» кривой WCSS(k): точка, наиболее удалённая от прямой между первой и последней точкой кривой
+    (обе оси приведены к [0, 1] — как в методе Kneedle). None — если точек меньше трёх или кривая плоская."""
+    k = np.asarray(ks, dtype=float)
+    v = np.asarray(values, dtype=float)
+    ok = np.isfinite(v)
+    k, v = k[ok], v[ok]
+    if len(k) < 3 or np.ptp(v) == 0 or np.ptp(k) == 0:
+        return None
+    x = (k - k.min()) / np.ptp(k)
+    y = (v - v.min()) / np.ptp(v)
+    # расстояние до хорды (0, y0)–(1, y1): для убывающей выпуклой кривой точки лежат под хордой
+    y0, y1 = y[0], y[-1]
+    d = np.abs((y1 - y0) * x - y + y0) / np.hypot(y1 - y0, 1.0)
+    return int(k[int(np.argmax(d))])
+
+
 def compute_all(X: np.ndarray, A: np.ndarray | None, labels: np.ndarray) -> dict:
-    """Все индексы для одного разбиения. A — веса рёбер разреженной сети (или None)."""
+    """Все индексы для одного разбиения. A — веса рёбер разреженной сети (или None). WCSS — для метода локтя."""
     labels = np.asarray(labels)
     out = {"K": _k(labels), "SW": sw(X, labels), "CH": ch(X, labels), "DBI": dbi(X, labels), "S_Dbw": s_dbw(X, labels)}
+    out["WCSS"] = wcss(X, labels)
     if A is not None:
         out.update({"AVI": avi(A, labels), "AVU": avu(A, labels), "ANUI": anui(A, labels), "MQ": mq(A, labels)})
     return out

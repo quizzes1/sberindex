@@ -105,4 +105,5 @@ per_year — каждый год кластеризуется заново и к
 | gmm | pooled | 0.851 | 0.055 |
 | leiden | per_year | 0.402 | 0.385 |
 | spectral | per_year | 0.626 | 0.178 |
+| kefrin | per_year | 0.423 | 0.414 |
 

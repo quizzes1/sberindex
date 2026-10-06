@@ -201,8 +201,8 @@ mt, sc, sp, sm = table2(pj, method, k, mode, tuple(periods))
 
 
 def row_style_str(r, lc):
-    """Ячейки меток — цвет кластера; остальные ячейки строки — светлый оттенок цвета траектории."""
-    bg = f"background-color: #{summary.tint(tcol.get(r['траектория'], '#ffffff'))}"
+    """Ячейки меток — цвет кластера; остальные ячейки — фон по траектории (summary.row_css: читается в любой теме)."""
+    bg = summary.row_css(r["траектория"])
     return [
         f"background-color: {cluster_color(int(r[c][1:]) - 1)}; color: white; font-weight: 600"
         if c in lc and r[c] != "—"
@@ -256,7 +256,10 @@ with tab_mo:
     size = int(pc["page_size"])
     pages = max(1, -(-len(v) // size))
     page = s3.number_input(f"Страница (из {pages})", 1, pages, 1)
-    st.caption(f"Найдено МО: {len(v)} из {len(mt)}. Строки окрашены по траектории.")
+    st.caption(
+        f"Найдено МО: {len(v)} из {len(mt)}. Цвет строки — траектория: рост — зелёный, снижение — красный, "
+        "колебание — жёлтый; стабильные и без данных — без цвета."
+    )
     cols = ["№", "Субъект", "МО", "тип МО", *periods, "траектория"]
     part_v = v[cols].iloc[(page - 1) * size : page * size]
     if len(part_v):

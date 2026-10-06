@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from common import (
     CATEGORICAL,
+    OTHER_GRAY,
     cluster_color,
     cluster_map,
     clustering_cfg,
@@ -265,6 +266,55 @@ if slow and not st.session_state.get(f"ktable_{method}_{year}_{len(ids)}"):
         st.rerun()
 else:
     kt = pd.DataFrame([{"k": kk, **run(pj, year, method, kk, mode)[1]} for kk in range(2, 11)])
+    if "WCSS" in kt:
+        # метод локтя: WCSS(k) и точка, наиболее удалённая от хорды между крайними точками кривой
+        k_el = icvi.elbow(kt["k"], kt["WCSS"])
+        fe = go.Figure(
+            go.Scatter(
+                x=kt["k"],
+                y=kt["WCSS"],
+                mode="lines+markers",
+                line=dict(width=2, color=CATEGORICAL[0]),
+                marker=dict(size=8),
+                hovertemplate="k = %{x}<br>WCSS = %{y:,.1f}<extra></extra>",
+                showlegend=False,
+            )
+        )
+        fe.add_trace(
+            go.Scatter(
+                x=[kt["k"].iloc[0], kt["k"].iloc[-1]],
+                y=[kt["WCSS"].iloc[0], kt["WCSS"].iloc[-1]],
+                mode="lines",
+                line=dict(width=1, color=OTHER_GRAY, dash="dot"),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+        if k_el is not None:
+            y_el = float(kt.loc[kt["k"].eq(k_el), "WCSS"].iloc[0])
+            fe.add_trace(
+                go.Scatter(
+                    x=[k_el],
+                    y=[y_el],
+                    mode="markers+text",
+                    marker=dict(size=14, color="#e34948"),
+                    text=[f"локоть: k = {k_el}"],
+                    textposition="top right",
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+        el, er = st.columns([2, 1])
+        el.plotly_chart(
+            layout(fe, 300, title="Метод локтя: внутрикластерная сумма квадратов (WCSS) ↓", xaxis_title="k"),
+            width="stretch",
+        )
+        er.markdown(
+            f"**Локоть: k = {k_el if k_el is not None else '—'}.**\n\n"
+            "WCSS — сумма квадратов расстояний МО до центра своего кластера по нормированным признакам. С ростом k она "
+            "всегда падает; «локоть» — k, после которого падение резко замедляется (точка кривой, наиболее удалённая от "
+            "пунктирной прямой между крайними точками). Сравните с индексами ниже: окончательный выбор — за вами."
+        )
     cols = st.columns(4)
     for i, ind in enumerate(["SW", "CH", "S_Dbw", "AVI", "AVU", "ANUI", "MQ", "DBI"]):
         f = go.Figure(
