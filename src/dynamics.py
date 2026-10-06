@@ -72,22 +72,39 @@ def match_years(labels: pd.DataFrame, min_jaccard: float = 0.2) -> pd.DataFrame:
 
 
 def through_labels(
-    labels: pd.DataFrame, mode: str, min_jaccard: float = 0.2, price_params: dict | None = None, order: bool = True
+    labels: pd.DataFrame,
+    mode: str,
+    min_jaccard: float = 0.2,
+    price_params: dict | None = None,
+    order: bool = True,
+    numbering: str = "rank",
 ) -> pd.DataFrame:
     """Сквозные типы K1…Kn: territory_id, year, label, through (0 → K1), jaccard.
 
-    pooled — одна модель на все годы: метка уже сквозная, сопоставление не нужно (through = label);
-    per_year — сопоставление соседних лет (match_years). Затем типы перенумеровываются по медиане
-    показателя упорядочения (configs/clustering.yaml → order_by, по умолчанию ВМП на душу в ценах
-    базового года) по убыванию: through = 0 — самые высокие значения (подпись K1).
+    pooled — одна модель на все годы: метка уже сквозная (through = label), номера — по медиане показателя
+    упорядочения (configs/clustering.yaml → order_by, по умолчанию ВМП на душу в ценах базового года) по всей панели.
+    per_year, numbering = rank (по умолчанию) — номер кластера в каждом году — его место по тому же показателю
+    внутри года (K1 — самый высокий), как на страницах «Кластеры» и «Сводные таблицы»: один и тот же кластер везде
+    называется одинаково, типов ровно k; переход K2 → K3 — переход к кластеру с более низким ВМП.
+    per_year, numbering = jaccard — сопоставление соседних лет по мере Жаккара (match_years): номер сохраняется,
+    если кластер следующего года похож на кластер прошлого; могут появляться новые номера (больше k).
     """
+    from src.clustering import order_labels
+
     if mode == "pooled":
         th = labels.assign(through=labels["label"], jaccard=np.nan)
+    elif numbering == "rank":
+        th = labels.assign(through=labels["label"], jaccard=np.nan)
+        if order:
+            parts = []
+            for y, g in th.groupby("year", sort=True):
+                s = g.set_index("territory_id")["through"]
+                parts.append(g.assign(through=order_labels(s, price_params, int(y)).to_numpy()))
+            return pd.concat(parts).sort_index().reset_index(drop=True)
+        return th.reset_index(drop=True)
     else:
         th = match_years(labels, min_jaccard)
     if order:
-        from src.clustering import order_labels
-
         s = th.set_index(["territory_id", "year"])["through"]
         th["through"] = order_labels(s, price_params).to_numpy()
     return th.reset_index(drop=True)

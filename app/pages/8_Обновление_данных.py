@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+import os
 from datetime import datetime
 
 import pandas as pd
@@ -15,7 +17,7 @@ st.set_page_config(page_title="Обновление данных", layout="wide"
 sidebar()
 st.title("Обновление данных")
 st.markdown(
-    "Здесь любой, кто вошёл на сайт, может **скачать свежие данные и пересчитать результаты**: панель, ВМП, "
+    "Здесь любой посетитель сайта может **скачать свежие данные и пересчитать результаты**: панель, ВМП, "
     "показатели, сети, кластеры, динамику, конвергенцию и сводные таблицы. Код и настройки по умолчанию через сайт не "
     "меняются. Пересчёт идёт на сервере в фоне — страницу можно закрыть; одновременно идёт не больше одного пересчёта. "
     "Когда он закончится, все страницы сами перечитают новые данные."
@@ -80,7 +82,15 @@ ok = st.checkbox(
     "Понимаю: пока идёт пересчёт, страницы показывают частично обновлённые результаты, а сервер загружен.",
     disabled=running,
 )
-if st.button("▶ Запустить", type="primary", disabled=running or not ok or need_raw):
+# необязательный пароль только на запуск пересчёта (переменная окружения UPDATE_PASSWORD; пусто — без пароля)
+need_pw = bool(os.environ.get("UPDATE_PASSWORD"))
+pw_ok = True
+if need_pw:
+    pw = st.text_input("Пароль для запуска пересчёта", type="password", disabled=running)
+    pw_ok = hmac.compare_digest(pw.encode(), os.environ["UPDATE_PASSWORD"].encode())
+    if pw and not pw_ok:
+        st.error("Неверный пароль.")
+if st.button("▶ Запустить", type="primary", disabled=running or not ok or need_raw or not pw_ok):
     res = update.start(mode)
     if res.get("mode") != mode and res.get("state") == "running":
         st.warning("Пересчёт уже идёт (его запустил кто-то другой) — второй не запускается.")

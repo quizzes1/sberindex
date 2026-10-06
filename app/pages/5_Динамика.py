@@ -12,6 +12,8 @@ from common import (
     COARSE_FROM,
     OTHER_GRAY,
     cluster_color,
+    cluster_controls,
+    cluster_partition,
     clustering_cfg,
     downloads,
     features_subset,
@@ -22,7 +24,7 @@ from common import (
     sidebar,
 )
 
-from src import clustering, dynamics, network
+from src import clustering, dynamics
 from src.io import load_yaml
 
 st.set_page_config(page_title="Динамика", layout="wide")
@@ -31,7 +33,6 @@ st.title("Динамика типов")
 
 cc = clustering_cfg()
 dc = load_yaml("dynamics.yaml")
-METHOD_LABELS = {"ward": "Уорд", "ward_kmeans": "Уорд + k-means", "kmeans": "k-средних", "gmm": "гауссовы смеси"}
 override = st.session_state.get("net_override", {})
 params = network_params(side, override)
 if "features" in override:
@@ -39,22 +40,7 @@ if "features" in override:
 pj = json.dumps(params, sort_keys=True, ensure_ascii=False)
 
 c1, c2, c3, c4 = st.columns(4)
-mode = c1.selectbox(
-    "Режим",
-    ["pooled", "per_year"],
-    format_func={"pooled": "одна модель на всю панель (по умолчанию)", "per_year": "каждый год заново"}.get,
-)
-pool_methods = [m for m in cc["methods"] if clustering.FAMILIES[m] == "attributes"]
-all_methods = [m for m in cc["methods"] if clustering.available(m)[0] and m != "canus"]
-methods = pool_methods if mode == "pooled" else all_methods
-default_m = dc["partition"]["method"] if mode == "pooled" else ("kefrin" if "kefrin" in methods else methods[0])
-method = c2.selectbox(
-    "Метод",
-    methods,
-    index=methods.index(default_m) if default_m in methods else 0,
-    format_func=lambda m: METHOD_LABELS.get(m, m),
-)
-k = c3.slider("k", 2, 10, dc["partition"]["k"])
+mode, method, k = cluster_controls(c1, c2, c3, exclude=("canus",))
 thr = c4.slider("Порог Жаккара (режим «каждый год заново»)", 0.0, 0.9, float(dc["matching"]["min_jaccard"]), 0.05)
 st.caption(
     "Режим «одна модель на всю панель» — решение команды: типы общие для всех лет, и смена типа означает "
@@ -62,23 +48,26 @@ st.caption(
 )
 
 
-@st.cache_data(show_spinner="Кластеризация по годам…", max_entries=32)
 def partition(pj: str, mode: str, method: str, k: int) -> pd.DataFrame:
-    p = json.loads(pj)
-    mp = {**cc["methods"][method], "method": method, "k": k, "seed": cc["seed"]}
-    if mode == "pooled":
-        X = network.features(p).dropna()
-        return clustering.fit_pooled(X, mp).reset_index()
-    out = []
-    for y, net in network.build(p).items():
-        lab = clustering.fit(net.X.to_numpy(), net.W * net.A, mp)
-        out.append(pd.DataFrame({"territory_id": net.ids, "year": y, "label": lab}))
-    return pd.concat(out, ignore_index=True)
+    """Общий кэш common.cluster_partition — то же разбиение, что на страницах «Кластеры» и «Сводные таблицы»."""
+    return cluster_partition(pj, method, k, mode)
 
 
 lab = partition(pj, mode, method, k)
 # сквозные типы K1…Kn: 0 → K1 — самый высокий ВМП на душу в ценах базового года
-th = dynamics.through_labels(lab, mode, thr, params["prices"])
+numbering = "rank"
+if mode == "per_year":
+    numbering = st.radio(
+        "Нумерация типов по годам",
+        ["rank", "jaccard"],
+        index=["rank", "jaccard"].index(dc["matching"].get("numbering", "rank")),
+        horizontal=True,
+        format_func={
+            "rank": "K1…Kn по ВМП внутри года — как на страницах «Кластеры» и «Сводные таблицы»",
+            "jaccard": "сопоставление соседних лет по Жаккару (номера могут отличаться от других страниц)",
+        }.get,
+    )
+th = dynamics.through_labels(lab, mode, thr, params["prices"], numbering=numbering)
 st.session_state["types_last"] = th[th["year"].eq(th["year"].max())].set_index("territory_id")["through"].to_dict()
 summ = dynamics.year_summary(th)
 tr = dynamics.transitions(th)

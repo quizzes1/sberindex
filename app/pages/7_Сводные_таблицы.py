@@ -7,7 +7,20 @@ import json
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from common import cluster_color, clustering_cfg, downloads, layout, network_params, sidebar
+from common import (
+    cluster_color,
+    cluster_controls,
+    cluster_partition,
+    cluster_table1,
+    cluster_table2,
+    cluster_year,
+    clustering_cfg,
+    downloads,
+    layout,
+    network_params,
+    sidebar,
+    table2_periods,
+)
 
 from src import clustering, network, summary
 from src.io import load_yaml
@@ -27,23 +40,8 @@ h = network.config_hash(params)
 METHOD_LABELS = {"ward_kmeans": "Уорд + k-means", "kmeans": "k-средних", "ward": "Уорд", "gmm": "гауссовы смеси"}
 
 c0, c1, c2, c3 = st.columns([1.2, 1.2, 1, 1])
-mode = c0.selectbox(
-    "Режим",
-    ["pooled", "per_year"],
-    format_func={"pooled": "одна модель на все годы (по умолчанию)", "per_year": "каждый год отдельно"}.get,
-)
-methods = [m for m in cc["methods"] if clustering.available(m)[0] and m != "canus"]
-if mode == "pooled":
-    methods = [m for m in methods if clustering.FAMILIES.get(m) == "attributes"]
-method = c1.selectbox(
-    "Метод",
-    methods,
-    index=methods.index(part["method"]) if part["method"] in methods else 0,
-    format_func=lambda m: METHOD_LABELS.get(m, m),
-)
-k = c2.slider("k", 2, 10, int(part["k"]))
-y0, y1 = side["years"]
-year = c3.select_slider("Год таблицы 1", list(range(y0, y1 + 1)), value=y1)
+mode, method, k = cluster_controls(c0, c1, c2, exclude=("canus",))
+year = cluster_year(c3, side, "Год таблицы 1")
 pr = side["prices"]
 st.caption(
     f"Сеть `{h}`; кластеры пронумерованы K1…Kn по убыванию медианы ВМП на душу в ценах {pr['base_year']} г. "
@@ -51,14 +49,8 @@ st.caption(
 )
 
 
-@st.cache_data(show_spinner="Кластеризация…", max_entries=16)
-def labels_of(pj: str, method: str, k: int, mode: str) -> pd.DataFrame:
-    return summary.partition(json.loads(pj), method, k, mode)
-
-
-@st.cache_data(show_spinner="Считаю характерные признаки…", max_entries=32)
-def table1(pj: str, method: str, k: int, mode: str, year: int) -> dict:
-    return summary.characteristic_table(labels_of(pj, method, k, mode), json.loads(pj), year)
+labels_of = cluster_partition  # общий кэш: то же разбиение, что на страницах «Кластеры» и «Динамика»
+table1 = cluster_table1
 
 
 lab = labels_of(pj, method, k, mode)
@@ -161,13 +153,7 @@ st.header("Таблица 2. Результаты кластеризации п�
 pc = summary.cfg()["periods"]
 tcol = pc["trajectory_colors"]
 years_all = sorted(int(y) for y in lab["year"].unique())
-periods = st.multiselect(
-    "Периоды (годы)",
-    years_all,
-    default=[y for y in summary.default_periods(min(years_all), max(years_all), pc["n_default"]) if y in years_all],
-    help="По умолчанию — три равноудалённых года окна: начало, середина, конец.",
-)
-periods = sorted(periods)
+periods = table2_periods(years_all, st)
 if len(periods) < 2:
     st.info("Выберите хотя бы два года.")
     st.stop()
@@ -184,17 +170,7 @@ st.caption(
 )
 
 
-@st.cache_data(show_spinner=False, max_entries=16)
-def table2(pj: str, method: str, k: int, mode: str, periods: tuple[int, ...]):
-    lb = labels_of(pj, method, k, mode)
-    p = list(periods)
-    mt = summary.periods_table(lb, p)
-    return (
-        mt,
-        summary.subject_table(lb, p, "count"),
-        summary.subject_table(lb, p, "pop"),
-        summary.transitions_summary(mt),
-    )
+table2 = cluster_table2
 
 
 mt, sc, sp, sm = table2(pj, method, k, mode, tuple(periods))

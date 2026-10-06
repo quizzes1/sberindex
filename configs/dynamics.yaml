@@ -13,6 +13,10 @@ partition:
   mode: pooled         # pooled | per_year
 
 matching:
+  # нумерация типов в режиме per_year: rank — место кластера по ВМП на душу внутри года (K1 — самый высокий),
+  # одинаково на всех страницах (по умолчанию); jaccard — сопоставление соседних лет по мере Жаккара (номер
+  # сохраняется за похожим кластером, возможны новые номера сверх k)
+  numbering: rank
   min_jaccard: 0.2     # кластер года t+1 наследует сквозной номер, только если мера Жаккара ≥ порога
 
 bootstrap:
@@ -25,13 +29,13 @@ convergence:
   # ВМП — дефлятор ВРП, зарплата и ФОТ — ИПЦ, инвестиции — индекс цен инвестиционной продукции);
   # конвергенцию по номинальным значениям не считаем.
   series:
-    gmp_basic: {source: gmp, method: basic, column: gmp_pc, years: [2013, 2024],
+    gmp_basic: {source: gmp, method: basic, column: gmp_pc, years: [2014, 2024],
                 name: "ВМП на душу, реальный (базовый метод, единый для всего окна)"}
     gmp_sectoral: {source: gmp, method: sectoral, column: gmp_pc, years: [2017, 2024],
                    name: "ВМП на душу, реальный (отраслевой метод)"}
-    wage: {source: indicators, column: wage, years: [2013, 2024], name: "Зарплата, реальная"}
-    payroll_pc: {source: indicators, column: payroll_pc, years: [2013, 2024], name: "ФОТ на жителя, реальный"}
-    invest_pc_nobudget: {source: indicators, column: invest_pc_nobudget, years: [2013, 2024],
+    wage: {source: indicators, column: wage, years: [2014, 2024], name: "Зарплата, реальная"}
+    payroll_pc: {source: indicators, column: payroll_pc, years: [2014, 2024], name: "ФОТ на жителя, реальный"}
+    invest_pc_nobudget: {source: indicators, column: invest_pc_nobudget, years: [2014, 2024],
                          name: "Инвестиции без бюджета на жителя, реальные"}
   samples: [Россия, ДФО]       # плюс каждый тип разбиения partition (на выборке по умолчанию — вся Россия)
   balanced: true               # β-регрессия: только МО с данными в начале и в конце окна

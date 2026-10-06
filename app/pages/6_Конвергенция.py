@@ -10,6 +10,8 @@ import plotly.graph_objects as go
 import streamlit as st
 from common import (
     CATEGORICAL,
+    YEARS_MAX,
+    YEARS_MIN,
     cluster_color,
     downloads,
     layout,
@@ -31,7 +33,7 @@ st.title("Конвергенция")
 cc = load_yaml("dynamics.yaml")["convergence"]
 reg = registry().set_index("code")
 SERIES = {
-    "gmp_basic": "ВМП на душу, реальный — базовый метод (единый для 2013–2024)",
+    "gmp_basic": "ВМП на душу, реальный — базовый метод (единый для всего окна)",
     "gmp_sectoral": "ВМП на душу, реальный — отраслевой метод (2017–2024)",
 }
 mon = reg["monetary"].fillna(False).astype(bool) if "monetary" in reg.columns else pd.Series(False, index=reg.index)
@@ -41,8 +43,10 @@ money = [c for c in reg.index if mon.get(c) and c != "gmp_pc" and reg.at[c, "par
 opts = list(SERIES) + money
 c1, c2 = st.columns([2, 1])
 var = c1.selectbox("Показатель", opts, format_func=lambda c: SERIES.get(c) or f"{reg.at[c, 'name']} ({c})")
-yr_default = (2017, 2024) if var == "gmp_sectoral" else (2013, 2024)
-y0, y1 = c2.slider("Окно", 2013, 2024, yr_default)
+# окно — из боковой панели (одно на весь сайт); отраслевой ВМП есть только с 2017 г.
+sy0, sy1 = side["years"]
+lo = max(YEARS_MIN, 2017) if var == "gmp_sectoral" else YEARS_MIN
+y0, y1 = c2.slider("Окно", lo, YEARS_MAX, (max(sy0, lo), max(sy1, lo + 1)))
 pr = real_prices(side)
 if var in SERIES or mon.get(var):
     st.caption(

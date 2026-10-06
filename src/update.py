@@ -149,6 +149,8 @@ def clear_caches() -> None:
 def run(mode: str) -> int:
     """Тело scripts/update_runner.py: run_all с параметрами режима, журнал и итоговое состояние."""
     started = _now()
+    if hasattr(os, "nice"):
+        os.nice(10)  # пониженный приоритет: интерфейс на том же сервере остаётся отзывчивым
     write_status({"state": "running", "mode": mode, "pid": os.getpid(), "started": started})
     t = time.time()
     with open(LOG, "w", encoding="utf-8") as log:

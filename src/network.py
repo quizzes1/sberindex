@@ -338,9 +338,36 @@ class YearNetwork:
         }
 
 
+def structural_missing(X_year: pd.DataFrame, threshold: float = 0.5) -> list[str]:
+    """Признаки, которых в году нет у большинства МО (меньше threshold с данными) — «структурный» пропуск:
+    например, специализации занятости по ОКВЭД2 до 2017 г. нет ни у одного МО. Такие признаки в этом году
+    не участвуют в расстоянии (иначе из сети года выпали бы все МО)."""
+    if not len(X_year):
+        return []
+    cov = X_year.notna().mean()
+    return [c for c in X_year.columns if cov[c] < threshold]
+
+
+def usable_rows(X: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
+    """Строки (territory_id, year), где есть все признаки, кроме структурно отсутствующих в этом году.
+
+    Для режима pooled: признаки, отсутствующие в году у всех МО, остаются NaN — такие МО-годы относятся к
+    кластеру по имеющимся признакам (clustering.fit_pooled)."""
+    keep = []
+    for _, g in X.groupby(level="year", sort=False):
+        skip = structural_missing(g, threshold)
+        rest = [c for c in g.columns if c not in skip]
+        keep.append(g[g[rest].notna().all(axis=1)] if rest else g.iloc[:0])
+    return pd.concat(keep).reindex(columns=X.columns) if keep else X.iloc[:0]
+
+
 def build_year(X_all: pd.DataFrame, year: int, params: dict) -> YearNetwork:
     """Сеть года по заранее нормированным признакам X_all (индекс territory_id, year)."""
     X = X_all.xs(year, level="year")
+    skip = structural_missing(X, params.get("structural_missing", 0.5))
+    if skip:
+        X = X.drop(columns=skip)
+        params = {**params, "features": {f: a for f, a in params["features"].items() if f not in skip}}
     dropped = []
     if params.get("missing", "drop") == "drop":
         bad = X.isna().any(axis=1)

@@ -9,12 +9,16 @@ import plotly.graph_objects as go
 import streamlit as st
 from common import (
     CATEGORICAL,
+    METHOD_NAMES,
     OTHER_GRAY,
     cluster_color,
+    cluster_controls,
     cluster_map,
+    cluster_partition,
+    cluster_year,
     clustering_cfg,
     downloads,
-    graph_force,
+    force_tab,
     graph_on_map,
     indicators_wide,
     layout,
@@ -35,32 +39,26 @@ side = sidebar()
 st.title("Кластеры")
 
 cc = clustering_cfg()
-METHOD_NAMES = {
-    "kmeans": "k-средних",
-    "ward": "иерархическая Уорда",
-    "ward_kmeans": "Уорд + k-means",
-    "gmm": "гауссовы смеси",
-    "leiden": "Leiden (граф)",
-    "spectral": "спектральная (граф)",
-    "kefrin": "KEFRiN (атрибутированная сеть)",
-    "canus": "CANUS (атрибутированная сеть, медленный)",
-}
 avail = {m: clustering.available(m) for m in cc["methods"]}
 
 
-@st.cache_data(show_spinner="Строю сеть…", max_entries=4)  # сеть всей России — ~120 МБ
+@st.cache_resource(show_spinner="Строю сеть…", max_entries=2)  # сеть всей России — ~150 МБ; общая, без копий
 def net_year(params_json: str, year: int):
     net = network.build(json.loads(params_json), years=[year])[year]
     return net.ids, net.X, net.W * net.A, net.edges()
 
 
-@st.cache_data(show_spinner="Одна модель на всю панель…", max_entries=16)
-def pooled(params_json: str, method: str, k: int) -> pd.Series:
-    """Режим pooled: метки (territory_id, year) одной модели на все МО-годы, K1 — самый высокий ВМП."""
+@st.cache_resource(show_spinner="Признаки панели…", max_entries=2)
+def panel_features(params_json: str) -> pd.DataFrame:
+    """Нормированные признаки всех МО-лет выборки (общие для всех k и методов; только чтение)."""
     p = json.loads(params_json)
-    X = network.features(p).dropna()
-    mp = {**cc["methods"][method], "method": method, "k": k, "seed": cc["seed"]}
-    return clustering.order_labels(clustering.fit_pooled(X, mp), p["prices"])
+    return network.usable_rows(network.features(p), p.get("structural_missing", 0.5))
+
+
+def pooled(params_json: str, method: str, k: int) -> pd.Series:
+    """Режим pooled: метки (territory_id, year) одной модели на все МО-годы, K1 — самый высокий ВМП.
+    Общий кэш common.cluster_partition — тот же, что у страниц «Динамика» и «Сводные таблицы»."""
+    return cluster_partition(params_json, method, k, "pooled").set_index(["territory_id", "year"])["label"]
 
 
 @st.cache_data(show_spinner="Кластеризация…", max_entries=256)
@@ -79,9 +77,8 @@ def run(params_json: str, year: int, method: str, k: int, mode: str = "per_year"
 
 @st.cache_data(show_spinner="Строю дерево Уорда…", max_entries=8)
 def ward_tree(params_json: str, year: int, mode: str):
-    p = json.loads(params_json)
     if mode == "pooled":
-        X = network.features(p).dropna().to_numpy()
+        X = panel_features(params_json).dropna(axis=1, how="all").dropna().to_numpy()
     else:
         X = net_year(params_json, year)[1].to_numpy()
     Z, idx = clustering.ward_linkage(X, cc["methods"]["ward_kmeans"].get("ward_max_n"), cc["seed"])
@@ -100,20 +97,11 @@ st.caption(
 )
 
 c0, c1, c2, c3 = st.columns([1.2, 1.2, 1, 1])
-mode = c0.selectbox(
-    "Режим",
-    ["per_year", "pooled"],
-    format_func={"per_year": "каждый год отдельно", "pooled": "одна модель на все годы (pooled)"}.get,
-    help="pooled — одна модель на все МО-годы (только методы по атрибутам): тип одинаково определён во всех годах.",
-)
+mode, method, k = cluster_controls(c0, c1, c2)
 ok_methods = [m for m in cc["methods"] if avail[m][0]]
 if mode == "pooled":
     ok_methods = [m for m in ok_methods if clustering.FAMILIES.get(m) == "attributes"]
-default_m = "ward_kmeans" if mode == "pooled" else ("kefrin" if "kefrin" in ok_methods else ok_methods[0])
-method = c1.selectbox("Метод", ok_methods, index=ok_methods.index(default_m), format_func=METHOD_NAMES.get)
-k = c2.slider("Число кластеров k", 2, 10, 6)
-y0, y1 = side["years"]
-year = c3.select_slider("Год", list(range(y0, y1 + 1)), value=y1)
+year = cluster_year(c3, side)
 missing = [f"{m}: {w}" for m, (ok, w) in avail.items() if not ok]
 if missing:
     st.caption("Недоступны: " + "; ".join(missing))
@@ -123,6 +111,11 @@ if k > len(CATEGORICAL):
         "ориентируйтесь на подсказки и таблицу."
     )
 
+if method in ("kefrin", "canus") and len(net_year(pj, year)[0]) > 1000:
+    st.info(
+        f"{METHOD_NAMES[method]} на {len(net_year(pj, year)[0])} МО считается долго (KEFRiN — около 20 с на разбиение, "
+        "CANUS — минуты). Результат запоминается: повторный просмотр того же года и k — мгновенно."
+    )
 labels, scores = run(pj, year, method, k, mode)
 ids, X, Wsp, edges = net_year(pj, year)
 nkey = f"{h}|{method}|k{k}|pooled" if mode == "pooled" else f"{h}|{method}|k{k}|{year}"
@@ -182,7 +175,7 @@ with t1:
 with t2:
     st.plotly_chart(graph_on_map(edges, labels, f"Сеть {year} г., цвет — кластер"), width="stretch")
 with t3:
-    st.plotly_chart(graph_force(edges, labels, title=f"Сеть {year} г., цвет — кластер"), width="stretch")
+    force_tab(edges, labels, title=f"Сеть {year} г., цвет — кластер", key="force_cl")
 
 st.subheader("Индексы качества")
 order = ["K", "SW", "CH", "DBI", "S_Dbw", "AVI", "AVU", "ANUI", "MQ"]
@@ -198,7 +191,7 @@ st.caption(
 
 st.subheader("Паспорта типов")
 reg = registry().set_index("code")
-feats = list(params["features"])
+feats = [f for f in params["features"] if f in X.columns]  # в 2014–2016 гг. специализации (hhi_emp) нет
 w = indicators_wide()
 raw = to_view(w[w["year"].eq(year)], list(w.columns), side).set_index("territory_id").reindex(labels.index)
 extra = [c for c in ["pop", "wage", "payroll_pc", "budget_own_share", "gmp_imputed_share"] if c not in feats]
@@ -248,7 +241,11 @@ with st.expander("Названия типов (сохраняются в data/cl
 
 st.subheader("Сравнение методов")
 cmp_methods = st.multiselect(
-    "Методы", ok_methods, default=[m for m in ok_methods if m != "canus"], format_func=METHOD_NAMES.get
+    "Методы",
+    ok_methods,
+    default=[m for m in ok_methods if m not in ("kefrin", "canus")],
+    format_func=METHOD_NAMES.get,
+    help="KEFRiN и CANUS на всей России считаются десятки секунд на разбиение — добавьте их вручную, если нужно.",
 )
 rows = [{"метод": METHOD_NAMES[m], **run(pj, year, m, k, mode)[1]} for m in cmp_methods]
 comp = pd.DataFrame(rows)[["метод", *order]] if rows else pd.DataFrame()

@@ -82,3 +82,20 @@ def test_log_t_convergence_vs_divergence():
     conv = convergence.log_t(convergence._log_panel(synthetic_panel(-0.15, T=20)))
     div = convergence.log_t(convergence._log_panel(synthetic_panel(0.1, T=20)))
     assert conv["t"] > -1.65 and div["t"] < -1.65
+
+
+def test_per_year_rank_numbering_matches_cluster_page():
+    """Режим «каждый год отдельно»: номер типа в динамике = место кластера по показателю внутри года (как на
+    страницах «Кластеры» и «Сводные таблицы»), а не номер по Жаккару — один кластер везде называется одинаково."""
+    import pandas as pd
+
+    from src import dynamics
+
+    lab = pd.DataFrame(
+        {"territory_id": [1, 2, 3, 4, 1, 2, 3, 4], "year": [2020] * 4 + [2021] * 4, "label": [0, 0, 1, 1, 1, 1, 0, 0]}
+    )
+    th = dynamics.through_labels(lab, "per_year", order=False)
+    assert (th["through"] == th["label"]).all() and th["through"].max() == 1  # ровно k типов
+    tj = dynamics.through_labels(lab, "per_year", order=False, numbering="jaccard")
+    # по Жаккару кластеры 2021 г. сопоставлены с 2020 г. — номера отличаются от меток года
+    assert not (tj["through"] == tj["label"]).all()

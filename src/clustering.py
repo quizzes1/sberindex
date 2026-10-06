@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib
 import sys
 import warnings
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -272,12 +273,29 @@ def fit_pooled(X_panel: pd.DataFrame, params: dict) -> pd.Series:
     """Режим «по всей панели»: одна модель на все МО-годы сразу (только методы по атрибутам).
 
     X_panel — нормированные признаки с индексом (territory_id, year) (нормировка по всей
-    панели). Типы одинаковы для всех лет по построению, поэтому смена типа МО означает
+    панели). Строки с пропусками (только структурными — network.usable_rows) в обучении не участвуют
+    и относятся к ближайшему центру кластера по имеющимся признакам. Типы одинаковы для всех лет по построению, поэтому смена типа МО означает
     изменение его показателей, а не перекластеризацию года. Возвращает метки с тем же индексом.
     """
     if FAMILIES.get(params["method"]) != "attributes":
         raise ValueError("Режим pooled доступен только для методов по атрибутам (kmeans, ward, ward_kmeans, gmm)")
-    lab = fit(X_panel.to_numpy(), None, params)
+    # признак, которого нет во всём окне (например, специализации при окне 2014–2016), в модели не участвует
+    X = X_panel.loc[:, X_panel.notna().any()].to_numpy(dtype=float)
+    full = ~np.isnan(X).any(axis=1)
+    if not full.any():
+        raise ValueError("Нет МО-лет с полным набором признаков — выберите другие признаки или окно лет")
+    lab = np.full(len(X), -1, dtype=int)
+    lab[full] = fit(X[full], None, params)
+    if (~full).any():
+        # строки со структурно отсутствующим признаком (например, специализации до 2017 г. нет ни у кого):
+        # ближайший центр кластера по имеющимся признакам (центры — по полным строкам)
+        C = np.vstack([X[full][lab[full] == c].mean(axis=0) for c in range(lab[full].max() + 1)])
+        P = X[~full]
+        m = ~np.isnan(P)
+        d = np.stack(
+            [np.where(m, (np.nan_to_num(P) - C[c]) ** 2, 0.0).sum(axis=1) / m.sum(axis=1) for c in range(len(C))], 1
+        )
+        lab[~full] = d.argmin(axis=1)
     return pd.Series(lab, index=X_panel.index, name="label")
 
 
@@ -302,6 +320,17 @@ def code(label: int) -> str:
     return f"K{int(label) + 1}"
 
 
+@lru_cache(maxsize=8)
+def _order_values(ind: str, base_year: int, scope: str, spatial: bool) -> pd.Series:
+    """Показатель упорядочения кластеров в ценах base_year, индекс (territory_id, year) — кэш на процесс."""
+    from src import prices
+    from src.io import PROCESSED
+
+    w = pd.read_parquet(PROCESSED / "indicators_wide.parquet", columns=["territory_id", "year", "region_code", ind])
+    w = prices.to_real(w, [ind], base_year, scope, spatial)
+    return w.set_index(["territory_id", "year"])[ind]
+
+
 def order_labels(
     labels: pd.Series, price_params: dict | None = None, year: int | None = None, indicator: str | None = None
 ) -> pd.Series:
@@ -311,13 +340,10 @@ def order_labels(
     Показатель — configs/clustering.yaml → order_by; денежный пересчитывается в цены base_year (src/prices.py).
     """
     from src import prices
-    from src.io import PROCESSED
 
     ind = indicator or default_params().get("order_by", "gmp_pc")
-    w = pd.read_parquet(PROCESSED / "indicators_wide.parquet", columns=["territory_id", "year", "region_code", ind])
     pp = prices.price_params({**(price_params or {}), "values": "real"})
-    w = prices.to_real(w, [ind], pp["base_year"], pp["deflator_scope"], pp["spatial_price_adjustment"])
-    v = w.set_index(["territory_id", "year"])[ind]
+    v = _order_values(ind, int(pp["base_year"]), pp["deflator_scope"], bool(pp["spatial_price_adjustment"]))
     if isinstance(labels.index, pd.MultiIndex):
         vals = v.reindex(labels.index).to_numpy()
     else:

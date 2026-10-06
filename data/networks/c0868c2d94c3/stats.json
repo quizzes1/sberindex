@@ -1,0 +1,234 @@
+[
+  {
+    "year": 2014,
+    "nodes": 216,
+    "edges": 995,
+    "components": 1,
+    "largest_component": 216,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.212962962962964,
+    "degree_max": 16,
+    "dropped_missing": [
+      344,
+      620,
+      778,
+      2344,
+      2345,
+      2346,
+      2347,
+      2348,
+      2349,
+      2350
+    ]
+  },
+  {
+    "year": 2015,
+    "nodes": 218,
+    "edges": 1034,
+    "components": 1,
+    "largest_component": 218,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.486238532110091,
+    "degree_max": 17,
+    "dropped_missing": [
+      778,
+      858,
+      875,
+      2345,
+      2346,
+      2347,
+      2349,
+      2350
+    ]
+  },
+  {
+    "year": 2016,
+    "nodes": 224,
+    "edges": 1044,
+    "components": 1,
+    "largest_component": 224,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.321428571428571,
+    "degree_max": 15,
+    "dropped_missing": [
+      322,
+      575,
+      609,
+      786,
+      868
+    ]
+  },
+  {
+    "year": 2017,
+    "nodes": 225,
+    "edges": 1070,
+    "components": 1,
+    "largest_component": 225,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.511111111111111,
+    "degree_max": 16,
+    "dropped_missing": [
+      344,
+      575,
+      609,
+      786
+    ]
+  },
+  {
+    "year": 2018,
+    "nodes": 226,
+    "edges": 1048,
+    "components": 1,
+    "largest_component": 226,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.274336283185841,
+    "degree_max": 16,
+    "dropped_missing": [
+      575,
+      609,
+      786
+    ]
+  },
+  {
+    "year": 2019,
+    "nodes": 226,
+    "edges": 1038,
+    "components": 1,
+    "largest_component": 226,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.185840707964601,
+    "degree_max": 18,
+    "dropped_missing": [
+      575,
+      609,
+      786
+    ]
+  },
+  {
+    "year": 2020,
+    "nodes": 206,
+    "edges": 949,
+    "components": 1,
+    "largest_component": 206,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.21359223300971,
+    "degree_max": 16,
+    "dropped_missing": [
+      575,
+      609,
+      786,
+      861,
+      862,
+      863,
+      864,
+      865,
+      866,
+      867,
+      868,
+      875,
+      877,
+      878,
+      879,
+      880,
+      881,
+      883,
+      884,
+      885,
+      886,
+      887,
+      889
+    ]
+  },
+  {
+    "year": 2021,
+    "nodes": 226,
+    "edges": 1044,
+    "components": 1,
+    "largest_component": 226,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.238938053097344,
+    "degree_max": 15,
+    "dropped_missing": [
+      575,
+      609,
+      786
+    ]
+  },
+  {
+    "year": 2022,
+    "nodes": 228,
+    "edges": 1119,
+    "components": 1,
+    "largest_component": 228,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.81578947368421,
+    "degree_max": 22,
+    "dropped_missing": [
+      609
+    ]
+  },
+  {
+    "year": 2023,
+    "nodes": 227,
+    "edges": 1096,
+    "components": 1,
+    "largest_component": 227,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.656387665198238,
+    "degree_max": 17,
+    "dropped_missing": [
+      609,
+      786
+    ]
+  },
+  {
+    "year": 2024,
+    "nodes": 203,
+    "edges": 938,
+    "components": 1,
+    "largest_component": 203,
+    "isolated": 0,
+    "degree_min": 7,
+    "degree_mean": 9.241379310344827,
+    "degree_max": 16,
+    "dropped_missing": [
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      575,
+      609,
+      786,
+      869
+    ]
+  }
+]

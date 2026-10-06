@@ -1,5 +1,5 @@
 # Развёртывание на сервере (см. DEPLOY.md):
-#   cp .env.example .env    # домен, логин и хэш пароля
+#   cp .env.example .env    # домен
 #   docker compose up -d --build
 # Пересборка данных с нуля (качает ~1,5 ГБ исходников, 15–60 мин):
 #   docker compose --profile pipeline run --rm pipeline
@@ -20,6 +20,11 @@ services:
     mem_limit: "${APP_MEM_LIMIT:-7g}"   # интерфейс + пересчёт со страницы «Обновление данных»
     environment:
       - PYTHONIOENCODING=utf-8
+      # один тяжёлый расчёт не занимает все ядра — интерфейс остаётся отзывчивым для остальных
+      - OMP_NUM_THREADS=${APP_THREADS:-2}
+      - OPENBLAS_NUM_THREADS=${APP_THREADS:-2}
+      - MKL_NUM_THREADS=${APP_THREADS:-2}
+      - UPDATE_PASSWORD=${UPDATE_PASSWORD:-}   # пусто — кнопка «Обновление данных» доступна всем
 
   caddy:
     image: caddy:2
@@ -31,8 +36,6 @@ services:
       - "443:443"
     environment:
       - DOMAIN=${DOMAIN:?укажите DOMAIN в .env}
-      - BASIC_AUTH_USER=${BASIC_AUTH_USER:?укажите BASIC_AUTH_USER в .env}
-      - BASIC_AUTH_HASH=${BASIC_AUTH_HASH:?укажите BASIC_AUTH_HASH в .env}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data          # сертификаты Let's Encrypt

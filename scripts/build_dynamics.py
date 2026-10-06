@@ -48,13 +48,15 @@ def main() -> int:
     h = network.config_hash(netp)
     L = pd.read_parquet(DATA / "clusters" / h / "labels.parquet")
     mp = {**cp["methods"][a.method], "method": a.method, "k": a.k, "seed": cfg["seed"]}
-    Xp = network.features(netp).dropna()
+    Xp = network.usable_rows(network.features(netp), netp.get("structural_missing", 0.5))
     if a.mode == "pooled":
         lab = clustering.fit_pooled(Xp, mp).reset_index()
     else:
         lab = L[L["method"].eq(a.method) & L["k"].eq(a.k)][["territory_id", "year", "label"]]
     # сквозные типы K1…Kn (0 → K1 — самый высокий ВМП на душу в ценах базового года)
-    th = dynamics.through_labels(lab, a.mode, cfg["matching"]["min_jaccard"], netp["prices"])
+    th = dynamics.through_labels(
+        lab, a.mode, cfg["matching"]["min_jaccard"], netp["prices"], numbering=cfg["matching"].get("numbering", "rank")
+    )
     tr = dynamics.transitions(th)
     mig = dynamics.migrants(th)
     ys = dynamics.year_summary(th)
@@ -73,7 +75,7 @@ def main() -> int:
         for b in range(a.boot):
             s_ = rng.choice(ids, len(ids), replace=True)
             m = Xp.index.get_level_values("territory_id").isin(s_)
-            l2 = clustering.fit(Xp[m].to_numpy(), None, {**mp, "seed": cfg["seed"] + b + 1})
+            l2 = clustering.fit_pooled(Xp[m], {**mp, "seed": cfg["seed"] + b + 1}).to_numpy()
             ari.append(adjusted_rand_score(base[Xp.index[m]], l2))
         boot.append(
             {

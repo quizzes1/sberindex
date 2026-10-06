@@ -42,7 +42,7 @@ def partition(netp: dict, method: str, k: int, mode: str = "pooled", seed: int |
     cc = clustering.default_params()
     mp = {**cc["methods"][method], "method": method, "k": k, "seed": cc["seed"] if seed is None else seed}
     if mode == "pooled":
-        X = network.features(netp).dropna()
+        X = network.usable_rows(network.features(netp), netp.get("structural_missing", 0.5))
         lab = clustering.order_labels(clustering.fit_pooled(X, mp), netp["prices"])
         return lab.rename("label").reset_index()
     out = []

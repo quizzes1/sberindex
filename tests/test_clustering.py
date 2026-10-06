@@ -106,3 +106,19 @@ def test_order_by_value_k1_is_highest():
     out = clustering.order_by_value(lab, val)
     assert list(out) == [2, 2, 0, 0, 1, 1, 3]  # K1 — кластер 1 (медиана 95), неизвестный — последним
     assert clustering.code(0) == "K1"
+
+
+def test_pooled_with_structurally_missing_feature():
+    """Признак отсутствует у всех МО в части лет (специализация до 2017 г.): модель учится на полных строках,
+    остальные относятся к ближайшему центру; если признака нет во всём окне — он не участвует."""
+    import pandas as pd
+
+    X, _ = make_blobs(n_samples=120, centers=3, n_features=3, cluster_std=0.3, random_state=0)
+    idx = pd.MultiIndex.from_product([range(40), [2015, 2016, 2017]], names=["territory_id", "year"])
+    Xp = pd.DataFrame(X, index=idx, columns=["a", "b", "hhi"])
+    Xp.loc[(slice(None), [2015, 2016]), "hhi"] = np.nan
+    lab = clustering.fit_pooled(Xp, {"method": "ward_kmeans", "k": 3, "seed": 42})
+    assert lab.ge(0).all() and set(lab) == {0, 1, 2}
+    only_old = Xp.loc[(slice(None), [2015, 2016]), :]
+    lab2 = clustering.fit_pooled(only_old, {"method": "kmeans", "k": 3, "seed": 42})
+    assert lab2.ge(0).all() and len(lab2) == len(only_old)

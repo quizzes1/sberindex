@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
-from common import cluster_color, downloads, mo, sample_ids, sidebar  # noqa: E402
+from common import (  # noqa: E402
+    METHOD_NAMES,
+    cluster_color,
+    cluster_partition,
+    cluster_table1,
+    cluster_table2,
+    current_partition_params,
+    downloads,
+    mo,
+    sample_ids,
+    sidebar,
+    table2_periods,
+)
 
-from src import summary
-from src.io import PROCESSED, load_yaml
+from src import network, summary
 
 st.set_page_config(page_title="Кластеризация МО", page_icon="🗺️", layout="wide")
 side = sidebar()
@@ -72,36 +83,42 @@ st.markdown(
 """
 )
 
-# ---------------------------------------------------------------- сводные таблицы (разбиение по умолчанию)
-part = load_yaml("dynamics.yaml")["partition"]
-t1p, t2p = PROCESSED / "summary_table1.csv", PROCESSED / "summary_table2_subjects_count.csv"
-if t1p.exists() and t2p.exists():
-    st.subheader("Типы муниципалитетов (таблица 1)")
-    st.caption(
-        f"Разбиение по умолчанию: вся Россия, «Уорд + k-means», k = {part['k']}, одна модель на все годы; K1 — самый "
-        "высокий ВМП на душу в ценах базового года. Свои настройки, правка описаний и выгрузки — страница «Сводные таблицы»."
-    )
-    t1 = pd.read_csv(t1p, encoding="utf-8-sig")
-    st.dataframe(
-        t1[["Кластер", "Число МО", "Характерные признаки", "Примеры МО"]].style.apply(
-            lambda col: [
-                f"background-color: {cluster_color(int(v[1:]) - 1)}; color: white; font-weight: 600" for v in col
-            ],
-            subset=["Кластер"],
-        ),
-        width="stretch",
-        hide_index=True,
-        column_config={"Характерные признаки": st.column_config.TextColumn(width="large")},
-    )
+# ---------------------------------------------------------------- сводные таблицы — с текущими настройками
+# Тот же общий кэш, что у страниц «Кластеры», «Динамика», «Сводные таблицы»: состав и номера кластеров совпадают.
+params, pj, mode, method, k = current_partition_params(side)
+h = network.config_hash(params)
+lab = cluster_partition(pj, method, k, mode)
+y0, y1 = side["years"]
+year = int(st.session_state.get("_cl_year", y1))
+year = year if y0 <= year <= y1 and year in set(lab["year"]) else int(lab["year"].max())
+periods = [y for y in table2_periods(sorted(int(v) for v in lab["year"].unique())) if y in set(lab["year"])]
+mode_txt = "одна модель на все годы" if mode == "pooled" else "каждый год отдельно"
+st.subheader("Типы муниципалитетов (таблица 1)")
+st.caption(
+    f"{year} г.; {METHOD_NAMES.get(method, method)}, k = {k}, {mode_txt} — текущие настройки (боковая панель и страницы "
+    "«Сеть», «Кластеры»). K1 — самый высокий ВМП на душу в ценах базового года. Правка описаний и выгрузки — страница "
+    "«Сводные таблицы»."
+)
+res = cluster_table1(pj, method, k, mode, year)
+t1 = summary.apply_descriptions(res["table"], f"{h}|{method}|k{k}|{mode}|{year}")
+st.dataframe(
+    t1[["Кластер", "Число МО", "Характерные признаки", "Примеры МО"]].style.apply(
+        lambda col: [f"background-color: {cluster_color(int(v[1:]) - 1)}; color: white; font-weight: 600" for v in col],
+        subset=["Кластер"],
+    ),
+    width="stretch",
+    hide_index=True,
+    column_config={"Характерные признаки": st.column_config.TextColumn(width="large")},
+)
 
+if len(periods) >= 2:
     st.subheader("Результаты по периодам: субъекты (таблица 2)")
-    t2 = pd.read_csv(t2p)
-    years = [c for c in t2.columns if c.isdigit()]
-    tcol = summary.cfg()["periods"]["trajectory_colors"]
-    view = t2[["№", "Субъект", "ФО", "МО"]].copy()
-    for y in years:
-        view[y] = ["—" if pd.isna(v) else f"K{int(v) + 1} ({sh:.0%})" for v, sh in zip(t2[y], t2[f"{y} доля"])]
-    view["траектория"] = t2["траектория"]
+    mt, sc, sp, sm = cluster_table2(pj, method, k, mode, tuple(periods))
+    years = [str(y) for y in periods]
+    view = sc[["№", "Субъект", "ФО", "МО"]].copy()
+    for y in periods:
+        view[str(y)] = ["—" if pd.isna(v) else f"K{int(v) + 1} ({sh:.0%})" for v, sh in zip(sc[y], sc[f"{y} доля"])]
+    view["траектория"] = sc["траектория"]
 
     def row_style(r):
         bg = summary.row_css(r["траектория"])
@@ -114,22 +131,24 @@ if t1p.exists() and t2p.exists():
 
     st.caption(
         "В ячейке — доминирующий кластер МО субъекта и доля МО субъекта в нём. Траектория: стабильный / рост (переход к "
-        "кластеру с более высоким ВМП) / снижение / колебание."
+        "кластеру с более высоким ВМП) / снижение / колебание. Периоды — как на странице «Сводные таблицы»."
     )
     st.dataframe(view.style.apply(row_style, axis=1), width="stretch", hide_index=True, height=420)
 
     st.markdown("**Поиск МО**")
     q = st.text_input("Название МО или субъекта", "", placeholder="например, Хабаровск")
     if q:
-        mt = pd.read_csv(PROCESSED / "summary_table2_mo.csv", encoding="utf-8-sig")
         hit = mt[mt["МО"].str.contains(q, case=False, na=False) | mt["Субъект"].str.contains(q, case=False, na=False)]
-        ycols = [c for c in mt.columns if c.isdigit()]
-        st.caption(f"Найдено: {len(hit)}" + (" (показаны первые 100)" if len(hit) > 100 else ""))
+        hit = hit[["№", "Субъект", "МО", "тип МО", *periods, "траектория"]].head(100).copy()
+        for y in periods:
+            hit[y] = hit[y].map(summary.label_text)
+        hit.columns = [str(c) for c in hit.columns]
+        st.caption(f"Найдено: {len(hit)}" + (" (показаны первые 100)" if len(hit) >= 100 else ""))
         st.dataframe(
-            hit.head(100).style.apply(
+            hit.style.apply(
                 lambda r: [
                     f"background-color: {cluster_color(int(r[c][1:]) - 1)}; color: white"
-                    if c in ycols and isinstance(r[c], str) and r[c].startswith("K")
+                    if c in years and r[c] != "—"
                     else summary.row_css(r["траектория"])
                     for c in r.index
                 ],
@@ -138,20 +157,23 @@ if t1p.exists() and t2p.exists():
             width="stretch",
             hide_index=True,
         )
+    title2 = (
+        f"Результаты кластеризации по периодам {', '.join(map(str, periods))} ({METHOD_NAMES.get(method, method)}, "
+        f"k = {k}, {mode_txt}; K1…K{k} — по убыванию ВМП на душу в ценах {side['prices']['base_year']} г.)"
+    )
     c1, c2 = st.columns(2)
-    if (PROCESSED / "summary_table2.xlsx").exists():
-        c1.download_button(
-            "⬇ Таблица 2 (Excel, с цветами)",
-            (PROCESSED / "summary_table2.xlsx").read_bytes(),
-            "table2.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-    if (PROCESSED / "summary_table2_print.html").exists():
-        c2.download_button(
-            "⬇ Страница для печати (HTML)",
-            (PROCESSED / "summary_table2_print.html").read_bytes(),
-            "table2_print.html",
-            "text/html",
-        )
+    c1.download_button(
+        "⬇ Таблица 2 (Excel, с цветами)",
+        summary.table2_excel(mt, sc, sp, sm, periods, title2),
+        "table2.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    c2.download_button(
+        "⬇ Страница для печати (HTML)",
+        summary.table2_html(sc, sm, periods, title2, "Доля — по числу МО субъекта.").encode("utf-8"),
+        "table2_print.html",
+        "text/html",
+    )
+
 
 downloads(None, {"боковая_панель": side}, "home")

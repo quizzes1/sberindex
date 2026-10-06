@@ -83,3 +83,13 @@ def test_geo_component_in_unit_interval():
         np.sort(ids), {"weights": {"road_km": 1, "line_km": 1, "adjacency": 1}, "no_road": "line"}
     )
     assert np.nanmin(Dg) >= 0 and np.nanmax(Dg) <= 1 and np.allclose(Dg, Dg.T, equal_nan=True)
+
+
+@needs_ind
+def test_network_2014_without_specialization():
+    """В 2014–2016 гг. специализации занятости (hhi_emp) по МО нет: сеть строится по остальным признакам."""
+    p = network.default_params()
+    p["sample"]["federal_districts"] = ["ДФО"]
+    net = network.build(p, years=[2014])[2014]
+    assert "hhi_emp" not in net.X.columns and len(net.ids) > 150
+    assert net.stats()["components"] == 1

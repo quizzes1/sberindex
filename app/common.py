@@ -51,27 +51,27 @@ def layout(fig: go.Figure, height: int = 420, **kw) -> go.Figure:
 
 
 # ---------------------------------------------------------------- данные (кэш)
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)  # один общий объект на процесс: только чтение
 def mo() -> pd.DataFrame:
     return pd.read_parquet(PROCESSED / "mo.parquet")
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)  # один общий объект на процесс: только чтение
 def indicators_wide() -> pd.DataFrame:
     return pd.read_parquet(PROCESSED / "indicators_wide.parquet")
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)  # один общий объект на процесс: только чтение
 def registry() -> pd.DataFrame:
     return pd.read_parquet(PROCESSED / "indicator_registry.parquet")
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)  # один общий объект на процесс: только чтение
 def panel_long() -> pd.DataFrame:
     return pd.read_parquet(PROCESSED / "panel_long.parquet")
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)  # один общий объект на процесс: только чтение
 def geojson(coarse: bool = False) -> dict:
     """Полигоны для карт: детальные (допуск 0,01°) или облегчённые для всей России (0,03°)."""
     name = (
@@ -103,47 +103,107 @@ def refresh_after_update() -> dict:
     if fin and fin != _SEEN_UPDATE["finished"]:
         if not _SEEN_UPDATE["first"]:
             st.cache_data.clear()
+            st.cache_resource.clear()
             update.clear_caches()
         _SEEN_UPDATE["finished"] = fin
     _SEEN_UPDATE["first"] = False
     return stt
 
 
-def sidebar() -> dict:
-    """Общие настройки для всех страниц; хранятся в st.session_state."""
+YEARS_MIN, YEARS_MAX = 2014, 2024  # окно в интерфейсе (2013 — нет темпа роста населения)
+
+# Настройки боковой панели и страницы «Сеть», которые сохраняются при переходе между страницами
+SIDEBAR_KEYS = (
+    "sample_kind",
+    "regions_sel",
+    "years_sel",
+    "excl_bc",
+    "norm_method",
+    "norm_scope",
+    "price_values",
+    "price_base_year",
+    "price_scope",
+    "price_spatial",
+)
+
+
+def _current_page() -> str | None:
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+    ctx = get_script_run_ctx()
+    return getattr(ctx, "page_script_hash", None) if ctx else None
+
+
+def _mark_page() -> None:
+    """Запомнить, открыта ли сейчас другая страница, чем в прошлый запуск (вызывается в начале sidebar())."""
     s = st.session_state
+    page = _current_page()
+    s["_page_changed"] = s.get("_page") != page
+    s["_page"] = page
+
+
+def keep(key: str, default):
+    """Значение виджета с ключом key, сохранённое между страницами.
+
+    Виджет на другой странице Streamlit считает новым и не берёт значение, записанное виджетом прошлой
+    страницы, поэтому копия хранится под ключом «_key» и при смене страницы записывается в st.session_state
+    заново (на той же странице — нет, иначе откатился бы только что сделанный выбор). Виджет создаётся только
+    с key=, без value/index."""
+    s = st.session_state
+    if s.get("_page_changed", True) and "_" + key in s:
+        s[key] = s["_" + key]
+    elif key not in s:
+        s[key] = s.get("_" + key, default)
+    return s[key]
+
+
+def remember(*keys: str) -> None:
+    """Скопировать текущие значения виджетов в постоянные ключи «_key»."""
+    s = st.session_state
+    for k in keys:
+        if k in s:
+            s["_" + k] = s[k]
+
+
+def sidebar() -> dict:
+    """Общие настройки для всех страниц; хранятся в st.session_state и не сбрасываются при переходе по страницам."""
+    s = st.session_state
+    _mark_page()
     upd = refresh_after_update()
     if upd.get("state") == "running":
         st.sidebar.warning(
             "Идёт пересчёт данных (страница «Обновление данных»): пока он не закончится, результаты могут быть неполными."
         )
+    netd = network.default_params()
+    pdef = prices.price_params()
     st.sidebar.header("Выборка и предобработка")
     options = ["Россия", *FDS, "Свой список субъектов"]  # вся Россия по умолчанию; округа — пресеты
+    if keep("sample_kind", "Россия") not in options:
+        s["sample_kind"] = "Россия"
     kind = st.sidebar.selectbox(
-        "Выборка",
-        options,
-        index=options.index(s.get("sample_kind", "Россия")) if s.get("sample_kind", "Россия") in options else 0,
-        key="sample_kind",
-        format_func=lambda x: "Вся Россия" if x == "Россия" else x,
+        "Выборка", options, key="sample_kind", format_func=lambda x: "Вся Россия" if x == "Россия" else x
     )
     regions: list[int] = []
     if kind == "Свой список субъектов":
         rt = regions_table().sort_values("region_name")
-        names = st.sidebar.multiselect(
-            "Субъекты",
-            rt["region_name"].tolist(),
-            default=s.get("regions_sel", ["Приморский край", "Хабаровский край"]),
-            key="regions_sel",
-        )
+        keep("regions_sel", ["Приморский край", "Хабаровский край"])
+        names = st.sidebar.multiselect("Субъекты", rt["region_name"].tolist(), key="regions_sel")
         regions = rt.loc[rt["region_name"].isin(names), "region_code"].astype(int).tolist()
-    years = st.sidebar.slider("Годы", 2013, 2024, value=s.get("years_sel", (2017, 2024)), key="years_sel")
-    excl = st.sidebar.checkbox("Исключить МО со сменой границ", value=s.get("excl_bc", False), key="excl_bc")
+    y_def = tuple(int(y) for y in netd["sample"]["years"])
+    yv = keep("years_sel", y_def)
+    if not (YEARS_MIN <= yv[0] <= yv[1] <= YEARS_MAX):
+        s["years_sel"] = (max(YEARS_MIN, min(yv[0], YEARS_MAX)), max(YEARS_MIN, min(yv[1], YEARS_MAX)))
+    years = st.sidebar.slider("Годы", YEARS_MIN, YEARS_MAX, key="years_sel")
+    keep("excl_bc", bool(netd["sample"].get("exclude_boundary_change", False)))
+    excl = st.sidebar.checkbox("Исключить МО со сменой границ", key="excl_bc")
+    keep("norm_method", netd["preprocess"]["method"])
     method = st.sidebar.selectbox(
         "Нормировка",
         ["minmax", "zscore"],
         key="norm_method",
         format_func={"minmax": "min-max в [0, 1]", "zscore": "z-score"}.get,
     )
+    keep("norm_scope", netd["preprocess"]["scope"])
     scope = st.sidebar.selectbox(
         "Область нормировки",
         ["panel", "year"],
@@ -156,34 +216,29 @@ def sidebar() -> dict:
             "кластерами во времени отчасти становятся артефактом нормировки."
         )
     st.sidebar.header("Цены")
-    pdef = prices.price_params()
+    keep("price_values", pdef["values"])
     values = st.sidebar.radio(
         "Денежные показатели",
         ["real", "nominal"],
-        index=["real", "nominal"].index(s.get("price_values", pdef["values"])),
         key="price_values",
         horizontal=True,
         format_func={"real": "в ценах базового года", "nominal": "в текущих ценах"}.get,
     )
-    years_b = list(range(2013, 2025))
+    keep("price_base_year", int(pdef["base_year"]))
     base_year = st.sidebar.selectbox(
-        "Базовый год цен",
-        years_b,
-        index=years_b.index(s.get("price_base_year", pdef["base_year"])),
-        key="price_base_year",
-        disabled=values == "nominal",
+        "Базовый год цен", list(range(YEARS_MIN, YEARS_MAX + 1)), key="price_base_year", disabled=values == "nominal"
     )
+    keep("price_scope", pdef["deflator_scope"])
     dscope = st.sidebar.selectbox(
         "Индексы цен",
         ["national", "regional"],
-        index=["national", "regional"].index(s.get("price_scope", pdef["deflator_scope"])),
         key="price_scope",
         disabled=values == "nominal",
         format_func={"national": "по России (точные среднегодовые)", "regional": "по субъектам (приближённо)"}.get,
     )
+    keep("price_spatial", bool(pdef["spatial_price_adjustment"]))
     spatial = st.sidebar.checkbox(
         "Поправка на межрегиональные различия цен",
-        value=s.get("price_spatial", bool(pdef["spatial_price_adjustment"])),
         key="price_spatial",
         disabled=values == "nominal",
         help="Делит потребительские суммы (зарплата, ФОТ, бюджет, розница) на стоимость фиксированного набора "
@@ -193,7 +248,13 @@ def sidebar() -> dict:
         st.sidebar.caption(
             "⚠️ Текущие цены: сравнение лет искажено инфляцией. Конвергенция всегда считается в реальных."
         )
+    if st.sidebar.button("Сбросить настройки", help="Вернуть значения по умолчанию на всех страницах"):
+        for k in (*SIDEBAR_KEYS, "net_override", "cl_mode", "cl_method", "cl_k", "cl_year", "t2_periods"):
+            s.pop(k, None)
+            s.pop("_" + k, None)
+        st.rerun()
     st.sidebar.caption("ВМП — расчётная оценка команды, не официальная статистика.")
+    remember(*SIDEBAR_KEYS)
     # [] — вся Россия (как в configs/network.yaml, чтобы хэш совпадал с готовыми результатами)
     fds = [kind] if kind in FDS else []
     return {
@@ -211,6 +272,143 @@ def sidebar() -> dict:
             "spatial_price_adjustment": bool(spatial),
         },
     }
+
+
+# ---------------------------------------------------------------- разбиение и сводные таблицы (общие для всех страниц)
+def cluster_defaults() -> dict:
+    """Режим, метод и k по умолчанию — одни на весь сайт (configs/dynamics.yaml → partition)."""
+    part = load_yaml("dynamics.yaml")["partition"]
+    return {"mode": part.get("mode", "pooled"), "method": part["method"], "k": int(part["k"])}
+
+
+@st.cache_data(show_spinner="Кластеризация…", max_entries=16)
+def cluster_partition(pj: str, method: str, k: int, mode: str) -> pd.DataFrame:
+    """territory_id, year, label (0 → K1) — одно разбиение для страниц «Кластеры», «Динамика», «Сводные таблицы»
+    и главной: при одинаковых параметрах состав и номера кластеров везде совпадают."""
+    from src import summary
+
+    return summary.partition(json.loads(pj), method, k, mode)
+
+
+@st.cache_data(show_spinner="Считаю характерные признаки…", max_entries=32)
+def cluster_table1(pj: str, method: str, k: int, mode: str, year: int) -> dict:
+    from src import summary
+
+    return summary.characteristic_table(cluster_partition(pj, method, k, mode), json.loads(pj), year)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def cluster_table2(pj: str, method: str, k: int, mode: str, periods: tuple[int, ...]):
+    from src import summary
+
+    lb = cluster_partition(pj, method, k, mode)
+    p = list(periods)
+    mt = summary.periods_table(lb, p)
+    return (
+        mt,
+        summary.subject_table(lb, p, "count"),
+        summary.subject_table(lb, p, "pop"),
+        summary.transitions_summary(mt),
+    )
+
+
+METHOD_NAMES = {
+    "kmeans": "k-средних",
+    "ward": "иерархическая Уорда",
+    "ward_kmeans": "Уорд + k-means",
+    "gmm": "гауссовы смеси",
+    "leiden": "Leiden (граф)",
+    "spectral": "спектральная (граф)",
+    "kefrin": "KEFRiN (атрибутированная сеть)",
+    "canus": "CANUS (атрибутированная сеть, медленный)",
+}
+
+
+def cluster_controls(c_mode, c_method, c_k, exclude: tuple[str, ...] = ()) -> tuple[str, str, int]:
+    """Режим, метод и k — одни и те же виджеты (ключи cl_mode, cl_method, cl_k) на страницах «Кластеры»,
+    «Динамика», «Сводные таблицы»: выбор на одной странице действует на всех, по умолчанию — configs/dynamics.yaml."""
+    from src import clustering
+
+    s = st.session_state
+    d = cluster_defaults()
+    keep("cl_mode", d["mode"])
+    mode = c_mode.selectbox(
+        "Режим",
+        ["pooled", "per_year"],
+        key="cl_mode",
+        format_func={"pooled": "одна модель на все годы (по умолчанию)", "per_year": "каждый год отдельно"}.get,
+        help="pooled — одна модель на все МО-годы (методы по атрибутам): номер кластера одинаков во всех годах. "
+        "«Каждый год отдельно» — номера K1…Kn по ВМП на душу внутри года.",
+    )
+    methods = [m for m in clustering_cfg()["methods"] if clustering.available(m)[0] and m not in exclude]
+    if mode == "pooled":
+        methods = [m for m in methods if clustering.FAMILIES.get(m) == "attributes"]
+    default_m = d["method"] if d["method"] in methods else methods[0]
+    if keep("cl_method", default_m) not in methods:
+        s["cl_method"] = default_m
+    method = c_method.selectbox("Метод", methods, key="cl_method", format_func=lambda m: METHOD_NAMES.get(m, m))
+    keep("cl_k", d["k"])
+    k = c_k.slider("Число кластеров k", 2, 10, key="cl_k")
+    remember("cl_mode", "cl_method", "cl_k")
+    return mode, method, int(k)
+
+
+def cluster_year(col, side: dict, label: str = "Год") -> int:
+    """Год просмотра кластеров — общий для страниц «Кластеры» и «Сводные таблицы» (по умолчанию — конец окна)."""
+    y0, y1 = side["years"]
+    s = st.session_state
+    if not (y0 <= keep("cl_year", y1) <= y1):
+        s["cl_year"] = y1
+    year = col.select_slider(label, list(range(y0, y1 + 1)), key="cl_year")
+    remember("cl_year")
+    return int(year)
+
+
+def table2_periods(years_all: list[int], col=None) -> list[int]:
+    """Периоды таблицы 2 — общие для страницы «Сводные таблицы» и главной (по умолчанию — 3 равноудалённых года).
+
+    col — куда нарисовать выбор (на главной не рисуется: берётся сохранённый выбор)."""
+    from src import summary
+
+    s = st.session_state
+    default = [
+        y for y in summary.default_periods(min(years_all), max(years_all), summary.cfg()["periods"]["n_default"])
+    ]
+    saved = [y for y in (s.get("t2_periods") or s.get("_t2_periods") or default) if y in years_all]
+    if col is None:
+        return sorted(saved) if len(saved) >= 2 else default
+    if s.get("_page_changed", True) or "t2_periods" not in s or any(y not in years_all for y in s["t2_periods"]):
+        s["t2_periods"] = saved if len(saved) >= 2 else default
+    out = col.multiselect(
+        "Периоды (годы)",
+        years_all,
+        key="t2_periods",
+        help="По умолчанию — три равноудалённых года окна: начало, середина, конец.",
+    )
+    remember("t2_periods")
+    return sorted(out)
+
+
+def current_partition_params(side: dict) -> tuple[dict, str, str, str, int]:
+    """Параметры сети (боковая панель + страница «Сеть») и выбранные режим, метод и k — как на страницах."""
+    override = st.session_state.get("net_override", {})
+    params = network_params(side, override)
+    if "features" in override:
+        params["features"] = override["features"]
+    d = cluster_defaults()
+    s = st.session_state
+    mode = s.get("cl_mode", s.get("_cl_mode", d["mode"]))
+    method = s.get("cl_method", s.get("_cl_method", d["method"]))
+    if mode == "pooled" and network_family(method) != "attributes":
+        method = d["method"]
+    k = int(s.get("cl_k", s.get("_cl_k", d["k"])))
+    return params, json.dumps(params, sort_keys=True, ensure_ascii=False), mode, method, k
+
+
+def network_family(method: str) -> str:
+    from src import clustering
+
+    return clustering.FAMILIES.get(method, "")
 
 
 def real_prices(side: dict) -> dict:
@@ -457,6 +655,31 @@ def graph_on_map(edges: pd.DataFrame, labels: pd.Series | None = None, title: st
     return geo_layout(fig, ids)
 
 
+FORCE_ON_DEMAND = 800  # на сетях больше — силовая раскладка строится по кнопке (на всей России ~8 с)
+
+
+@st.cache_data(show_spinner="Считаю силовую раскладку…", max_entries=8)
+def force_layout(edges: pd.DataFrame, nodes: tuple[int, ...], seed: int = 42) -> dict:
+    """Координаты узлов spring_layout (кэш: тот же граф — мгновенно)."""
+    import networkx as nx
+
+    g = nx.Graph()
+    g.add_weighted_edges_from(edges[["source", "target", "weight"]].itertuples(index=False, name=None))
+    g.add_nodes_from(nodes)
+    return nx.spring_layout(g, weight="weight", seed=seed, k=1.5 / np.sqrt(max(len(g), 1)))
+
+
+def force_tab(edges: pd.DataFrame, labels: pd.Series | None = None, title: str = "", key: str = "force") -> None:
+    """Вкладка «Силовая раскладка»: на больших сетях — по переключателю, чтобы не тормозить страницу."""
+    n = len(labels) if labels is not None else len(set(edges["source"]) | set(edges["target"]))
+    if n > FORCE_ON_DEMAND and not st.toggle(f"Построить раскладку ({n} узлов, ~5–10 с)", key=key):
+        st.caption(
+            "Силовая раскладка большой сети считается несколько секунд — включите переключатель, чтобы построить."
+        )
+        return
+    st.plotly_chart(graph_force(edges, labels, title=title), width="stretch")
+
+
 def graph_force(edges: pd.DataFrame, labels: pd.Series | None = None, seed: int = 42, title: str = "") -> go.Figure:
     """Силовая раскладка графа (networkx spring_layout, фиксированный seed)."""
     import networkx as nx
@@ -465,7 +688,7 @@ def graph_force(edges: pd.DataFrame, labels: pd.Series | None = None, seed: int 
     g.add_weighted_edges_from(edges[["source", "target", "weight"]].itertuples(index=False, name=None))
     if labels is not None:
         g.add_nodes_from(int(i) for i in labels.index)
-    pos = nx.spring_layout(g, weight="weight", seed=seed, k=1.5 / np.sqrt(max(len(g), 1)))
+    pos = force_layout(edges, tuple(int(i) for i in g.nodes()), seed)
     names = mo().set_index("territory_id")["name"]
     ex, ey = [], []
     for s, t in g.edges():
