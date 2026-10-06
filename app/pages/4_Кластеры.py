@@ -25,6 +25,7 @@ from common import (
     load_names,
     mo,
     network_params,
+    partition_badge,
     registry,
     save_names,
     sidebar,
@@ -125,7 +126,11 @@ disp = {
     int(c): clustering.code(c) + (f" · {names[int(c)]}" if names.get(int(c)) else "") for c in sorted(labels.unique())
 }
 st.caption(
-    "Кластеры пронумерованы K1…Kn по медиане ВМП на душу в ценах базового года, по убыванию: K1 — самый высокий."
+    partition_badge(h, mode, method, k)
+    + f" · {year} г. — размеры кластеров: "
+    + ", ".join(f"{clustering.code(c)} — {n}" for c, n in labels.value_counts().sort_index().items())
+    + " МО (те же числа — в таблице «Размер кластеров по годам» на странице «Динамика»). Номера K1…Kn — по медиане "
+    "ВМП на душу в ценах базового года, по убыванию."
     + (" Режим pooled: номера одинаковы во всех годах." if mode == "pooled" else "")
 )
 

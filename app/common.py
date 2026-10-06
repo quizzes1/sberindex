@@ -389,6 +389,13 @@ def table2_periods(years_all: list[int], col=None) -> list[int]:
     return sorted(out)
 
 
+def partition_badge(h: str, mode: str, method: str, k: int) -> str:
+    """Строка параметров разбиения — одна и та же на страницах «Кластеры», «Динамика», «Сводные таблицы»:
+    если она совпадает, совпадают и кластеры."""
+    m = "одна модель на все годы" if mode == "pooled" else "каждый год отдельно"
+    return f"Разбиение: сеть `{h}` · {m} · {METHOD_NAMES.get(method, method)} · k = {k}"
+
+
 def current_partition_params(side: dict) -> tuple[dict, str, str, str, int]:
     """Параметры сети (боковая панель + страница «Сеть») и выбранные режим, метод и k — как на страницах."""
     override = st.session_state.get("net_override", {})
@@ -457,7 +464,11 @@ def sample_rows(side: dict) -> pd.DataFrame:
 
 
 def network_params(side: dict, override: dict | None = None) -> dict:
-    """Параметры сети = configs/network.yaml + выборка и нормировка из боковой панели + override страницы."""
+    """Параметры сети = configs/network.yaml + выборка и нормировка из боковой панели + override страницы.
+
+    Годы модели — всегда полная панель из configs/network.yaml (2014–2024): нормировка признаков и модель
+    кластеризации не зависят от выбранного в боковой панели окна, оно только фильтрует показ. Иначе при
+    расширении окна модель обучалась бы на других данных и тот же год получал бы другие кластеры."""
     p = network.default_params()
     p = network.merge_params(
         p,
@@ -465,7 +476,7 @@ def network_params(side: dict, override: dict | None = None) -> dict:
             "sample": {
                 "federal_districts": side["federal_districts"],
                 "regions": side["regions"],
-                "years": side["years"],
+                "years": list(p["sample"]["years"]),
                 "exclude_boundary_change": side["exclude_boundary_change"],
             },
             "preprocess": {"method": side["method"], "scope": side["scope"]},

@@ -2,7 +2,7 @@
 
 Запуск:  python scripts/build_summary.py [--year 2024] [--periods 2017 2020 2024]
 
-Разбиение — configs/dynamics.yaml → partition (по умолчанию pooled, «Уорд + k-means», k = 6), сеть —
+Разбиение — configs/dynamics.yaml → partition (по умолчанию pooled, «Уорд + k-means», k = 5), сеть —
 configs/network.yaml (вся Россия, цены базового года). Тексты, исправленные аналитиками в интерфейсе
 (data/cluster_descriptions.yaml), подставляются.
 

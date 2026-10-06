@@ -50,3 +50,27 @@ def test_clusters_pooled_ward_kmeans_with_dendrogram():
     assert any(e.label.startswith("Дендрограмма") for e in at.expander)
     assert any("K1" in c.value for c in at.caption)
     assert any(m.value.startswith("**Локоть: k =") for m in at.markdown)  # метод локтя в выборе k
+
+
+@needs_data
+def test_clusters_of_a_year_do_not_depend_on_window():
+    """Окно «Годы» — только фильтр показа: модель и нормировка строятся на полной панели, поэтому кластеры 2014 г.
+    при окнах 2014–2015 и 2014–2024 одинаковы и совпадают на страницах «Кластеры» и «Динамика»."""
+    import json
+    import re
+
+    def sankey_2014(at):
+        spec = next(json.loads(c.proto.spec) for c in at.get("plotly_chart") if "sankey" in c.proto.spec)
+        cd = spec["data"][0]["node"]["customdata"]
+        return {re.search(r": (K\d+), (\d+)", x).group(1): x for x in cd if x.startswith("2014")}
+
+    out = []
+    for win in [(2014, 2015), (2014, 2024)]:
+        at = AppTest.from_file(str(ROOT / "app" / "Home.py"), default_timeout=900)
+        at.session_state["sample_kind"] = "ДФО"
+        at.session_state["years_sel"] = win
+        at.run()
+        at.switch_page("pages/5_Динамика.py").run()
+        assert not at.exception, [e.value for e in at.exception]
+        out.append(sankey_2014(at))
+    assert out[0] == out[1]

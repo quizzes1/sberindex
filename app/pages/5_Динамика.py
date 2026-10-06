@@ -21,10 +21,11 @@ from common import (
     layout,
     mo,
     network_params,
+    partition_badge,
     sidebar,
 )
 
-from src import clustering, dynamics
+from src import clustering, dynamics, network
 from src.io import load_yaml
 
 st.set_page_config(page_title="Динамика", layout="wide")
@@ -41,6 +42,7 @@ pj = json.dumps(params, sort_keys=True, ensure_ascii=False)
 
 c1, c2, c3, c4 = st.columns(4)
 mode, method, k = cluster_controls(c1, c2, c3, exclude=("canus",))
+st.caption(partition_badge(network.config_hash(params), mode, method, k))
 thr = c4.slider("Порог Жаккара (режим «каждый год заново»)", 0.0, 0.9, float(dc["matching"]["min_jaccard"]), 0.05)
 st.caption(
     "Режим «одна модель на всю панель» — решение команды: типы общие для всех лет, и смена типа означает "
@@ -68,6 +70,12 @@ if mode == "per_year":
         }.get,
     )
 th = dynamics.through_labels(lab, mode, thr, params["prices"], numbering=numbering)
+# модель — на полной панели (номера и состав кластеров не зависят от окна); окно боковой панели — только показ
+vy0, vy1 = side["years"]
+th = th[th["year"].between(vy0, vy1)].reset_index(drop=True)
+if th["year"].nunique() < 2:
+    st.info("Для динамики нужно окно хотя бы из двух лет — расширьте «Годы» в боковой панели.")
+    st.stop()
 st.session_state["types_last"] = th[th["year"].eq(th["year"].max())].set_index("territory_id")["through"].to_dict()
 summ = dynamics.year_summary(th)
 tr = dynamics.transitions(th)
@@ -110,9 +118,25 @@ fig.update_layout(
 )
 st.plotly_chart(fig, width="stretch")
 st.caption(
-    "Колонки — годы, узлы — сквозные типы K1…Kn (K1 — самый высокий ВМП на душу в ценах базового года), ленты — МО, "
-    "перешедшие из типа в тип. В режиме pooled тип одинаково определён во всех годах; в режиме «каждый год заново» "
-    "кластеры соседних лет сопоставляются венгерским алгоритмом по мере Жаккара."
+    "Колонки — годы, узлы — типы K1…Kn (K1 — самый высокий ВМП на душу в ценах базового года), ленты — МО, "
+    "перешедшие из типа в тип. В режиме pooled тип одинаково определён во всех годах; в режиме «каждый год отдельно» "
+    + (
+        "номер — место кластера по ВМП внутри года, как на странице «Кластеры»."
+        if numbering == "rank"
+        else "кластеры соседних лет сопоставлены по мере Жаккара — номера могут отличаться от страницы «Кластеры»."
+    )
+)
+
+st.subheader("Размер кластеров по годам (число МО)")
+sizes = pd.crosstab(th["through"].map(clustering.code), th["year"])
+sizes.index.name = "кластер"
+sizes.columns = [str(c) for c in sizes.columns]
+sizes.loc["всего"] = sizes.sum()
+st.dataframe(sizes, width="stretch")
+st.caption(
+    "Полный размер кластера в каждом году — совпадает с числом МО кластера на странице «Кластеры» за тот же год "
+    "(при тех же параметрах разбиения, строка выше). Числа в матрице переходов ниже меньше: там только МО, которые "
+    "есть в сети в обоих выбранных годах, по парам «из кластера → в кластер»."
 )
 
 st.subheader("Устойчивость по годам")
@@ -141,6 +165,10 @@ mat = pd.crosstab(
     s.loc[y_to].loc[common].map(clustering.code).rename(f"кластер в {y_to}"),
 )
 st.dataframe(mat, width="stretch")
+st.caption(
+    f"Строки — кластер в {y_from} г., столбцы — в {y_to} г.; в ячейке — число МО, которые есть в сети в обоих годах "
+    f"({len(common)} МО). Это не размер кластера: он — в таблице «Размер кластеров по годам» выше."
+)
 m = mo().set_index("territory_id")
 moved = pd.DataFrame({"было": s.loc[y_from].loc[common], "стало": s.loc[y_to].loc[common]})
 moved = moved[moved["было"].ne(moved["стало"])]

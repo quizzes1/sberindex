@@ -18,6 +18,7 @@ from common import (
     downloads,
     layout,
     network_params,
+    partition_badge,
     sidebar,
     table2_periods,
 )
@@ -42,6 +43,7 @@ METHOD_LABELS = {"ward_kmeans": "Уорд + k-means", "kmeans": "k-средни�
 c0, c1, c2, c3 = st.columns([1.2, 1.2, 1, 1])
 mode, method, k = cluster_controls(c0, c1, c2, exclude=("canus",))
 year = cluster_year(c3, side, "Год таблицы 1")
+st.caption(partition_badge(h, mode, method, k))
 pr = side["prices"]
 st.caption(
     f"Сеть `{h}`; кластеры пронумерованы K1…Kn по убыванию медианы ВМП на душу в ценах {pr['base_year']} г. "
@@ -152,7 +154,12 @@ st.divider()
 st.header("Таблица 2. Результаты кластеризации по периодам")
 pc = summary.cfg()["periods"]
 tcol = pc["trajectory_colors"]
-years_all = sorted(int(y) for y in lab["year"].unique())
+years_all = [
+    int(y) for y in sorted(lab["year"].unique()) if side["years"][0] <= y <= side["years"][1]
+]  # окно — только показ
+if len(years_all) < 2:
+    st.info("Для таблицы 2 нужно окно хотя бы из двух лет — расширьте «Годы» в боковой панели.")
+    st.stop()
 periods = table2_periods(years_all, st)
 if len(periods) < 2:
     st.info("Выберите хотя бы два года.")

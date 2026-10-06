@@ -91,7 +91,8 @@ lab = cluster_partition(pj, method, k, mode)
 y0, y1 = side["years"]
 year = int(st.session_state.get("_cl_year", y1))
 year = year if y0 <= year <= y1 and year in set(lab["year"]) else int(lab["year"].max())
-periods = [y for y in table2_periods(sorted(int(v) for v in lab["year"].unique())) if y in set(lab["year"])]
+in_window = [int(v) for v in sorted(lab["year"].unique()) if y0 <= v <= y1]  # окно — только показ, модель — вся панель
+periods = table2_periods(in_window) if len(in_window) >= 2 else []
 mode_txt = "одна модель на все годы" if mode == "pooled" else "каждый год отдельно"
 st.subheader("Типы муниципалитетов (таблица 1)")
 st.caption(
