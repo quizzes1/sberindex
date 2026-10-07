@@ -25,7 +25,7 @@ methods:
   canus: {family: attributed_network, epochs: 300, rho: 1.0, zeta: 1.0, attribute_distance: minkowski,
           network_distance: cosine, grid_subsample: 400}   # в автоматической сетке build_clusters — на подвыборке МО
 
-# Внешние репозитории: клонируются на закреплённом коммите в external/ (вне git, код в наш
+# Внешние репозитории: на закреплённом коммите в external/ загружаются только нужные файлы (вне git, код в наш
 # репозиторий не копируется). Запуск: python scripts/fetch_external.py
 external:
   KEFRiN:
@@ -33,14 +33,17 @@ external:
     commit: f9f96b1a778cb8d2e5ba85baae452dc813c4f110
     license: "не указана: файла LICENSE нет (README ссылается на MIT, но файла нет)"
     paper: "Shalileh S., Mirkin B. Community partitioning over feature-rich networks using an extended k-means method. Entropy 2022, 24(5), 626"
+    files: [kefrin.py, README.md]        # только нужный коду файл (весь репозиторий с данными — 355 МБ)
   CANUS:
     url: https://github.com/Sorooshi/CANUS
     commit: 754622af6eff9604a590e862a108c4c4212acf2d
     license: "не указана (по умолчанию — все права у автора)"
     paper: "Shalileh S. A filtered gradient descent clustering method to recover communities in attributed networks. IEEE Access, 2025"
     requires: torch
+    files: [canus.py, README.md]
   Pattern:
     url: https://github.com/Sorooshi/Pattern
     commit: e5ff50b34a1bbd723b9ae2e46c122a06e782daea
     license: GPL-3.0
     purpose: "эталонная реализация AVI/AVU/ANUI — только для сверки в тестах"
+    files: [metrics/clustering_metrics.py, LICENSE, README.md]

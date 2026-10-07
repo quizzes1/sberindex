@@ -27,11 +27,11 @@ RUN if [ "$WITH_CANUS" = "1" ]; then pip install -r requirements-optional.txt; f
 COPY . .
 
 # Внешние методы (KEFRiN, при WITH_CANUS=1 — и CANUS) на закреплённых коммитах из configs/clustering.yaml.
-# Их код не входит в наш репозиторий (нет файла лицензии) — клонируется при сборке образа;
-# демонстрационные датасеты и история git удаляются.
+# Их код не входит в наш репозиторий (нет файла лицензии) — при сборке образа скачиваются только нужные коду
+# файлы (kefrin.py, canus.py — десятки КБ, а не 355 МБ демонстрационных данных). Если GitHub недоступен
+# (--soft), образ всё равно собирается: сайт работает, метод на странице «Кластеры» помечен недоступным.
 RUN EXT="KEFRiN"; if [ "$WITH_CANUS" = "1" ]; then EXT="KEFRiN,CANUS"; fi \
- && python scripts/fetch_external.py --only "$EXT" \
- && rm -rf external/*/.git external/KEFRiN/data external/CANUS/Datasets
+ && python scripts/fetch_external.py --only "$EXT" --soft
 
 # непривилегированный пользователь (uid 1000 — обычно совпадает с пользователем на сервере,
 # чтобы контейнер мог писать в смонтированную папку data/)

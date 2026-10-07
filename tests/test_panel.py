@@ -102,3 +102,23 @@ def test_no_double_counting_on_type_change():
     long = pd.read_parquet(PROCESSED / "panel_long.parquet")
     v = long[(long["territory_id"] == 1431) & (long["indicator"] == "pop_avg") & (long["year"] == 2015)]["value"]
     assert len(v) == 1 and v.iloc[0] < 15000
+
+
+def test_percent_share_outside_0_100_rejected():
+    """Доля собственных доходов бюджета вне [0, 100] % — заведомая ошибка: в пропуск и в лог, без обрезки."""
+    import pandas as pd
+
+    from src.panel import reject_invalid
+
+    long = pd.DataFrame(
+        {
+            "territory_id": [1, 2, 3, 4],
+            "year": [2020] * 4,
+            "indicator": ["budget_own_share"] * 3 + ["pop"],
+            "value": [35.0, 3272.0, -13.3, 1000.0],
+        }
+    )
+    log: list = []
+    out = reject_invalid(long, log)
+    assert out["value"].tolist() == [35.0, 1000.0]
+    assert set(log[0]["reason"]) == {"доля вне 0–100 %"} and len(log[0]) == 2

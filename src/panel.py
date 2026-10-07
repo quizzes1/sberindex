@@ -185,16 +185,22 @@ def collapse(raw: pd.DataFrame, cfg: dict, unmatched_log: list) -> pd.DataFrame:
 
 
 POSITIVE = ("pop", "pop_avg", "workers", "payroll", "wage", "wage_lm", "area_ha")
+# доли в процентах, которые по определению лежат в [0, 100]: доля собственных (налоговых и неналоговых) доходов
+# в доходах бюджета. В БДПМО встречаются 3 272, 2 701, −13 % — ошибка ввода или сумма вместо доли.
+PERCENT = ("budget_own_share",)
 
 
 def reject_invalid(long: pd.DataFrame, rejected_log: list) -> pd.DataFrame:
     """Отбраковка заведомо ошибочных значений: ≤ 0 у рядов, которые обязаны быть положительными
-    (население, работники, зарплата, площадь). Строки уходят в лог rejected, пропуск потом может
-    быть заполнен запасным рядом с флагом."""
+    (население, работники, зарплата, площадь), и долей в процентах вне [0, 100]. Строки уходят в лог
+    rejected (data/processed/rejected.csv) и становятся пропуском — значения не обрезаются и не заменяются."""
     bad = long["indicator"].isin(POSITIVE) & long["value"].le(0)
     if bad.any():
         rejected_log.append(long[bad].assign(reason="значение ≤ 0"))
-    return long[~bad]
+    pct = long["indicator"].isin(PERCENT) & ~long["value"].between(0, 100)
+    if pct.any():
+        rejected_log.append(long[pct].assign(reason="доля вне 0–100 %"))
+    return long[~(bad | pct)]
 
 
 # ----------------------------------------------------------------------------- заполнение

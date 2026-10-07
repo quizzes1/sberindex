@@ -12,7 +12,7 @@
 | `data/processed/panel_wide.parquet` | одна строка на МО × год: все ряды колонками + `valid_in_year, derived, pop_filled, merged_sources, anomaly_sector_sum` |
 | `data/processed/mo.parquet` | справочник МО: последние название/тип/ОКТМО, `oktmo_history` (все ОКТМО по годам), регион, ФО, `is_dfo`, статус (ЗАТО, центр субъекта), центр и координаты, `boundary_change`, `boundary_events`, число лет с данными по ключевым рядам (`years_*`) |
 | `data/processed/unmatched.csv` | строки источников, которые не удалось привязать к `territory_id`, с причиной |
-| `data/processed/rejected.csv` | отбракованные заведомо ошибочные значения |
+| `data/processed/rejected.csv` | отбракованные заведомо ошибочные значения: ≤ 0 у населения, работников, зарплаты, площади; доля собственных доходов бюджета вне 0–100 % (в БДПМО встречаются 3 272 %, −13 % — 77 записей; становятся пропуском, не обрезаются) |
 | `data/processed/price_levels.parquet` | уровни цен (`src/prices.py`): `region_code` (0 — Россия), `year`, `deflator` (cpi, grp, invest, ppi_industry, ppi_manufacturing, ppi_agri), `level` — среднегодовой уровень (база произвольная), `flag` — способ расчёта |
 | `data/processed/summary_table1.csv`, `summary_table1.xlsx` | таблица 1 «Характерные признаки кластеров» для разбиения по умолчанию (`scripts/build_summary.py`); xlsx — с цветами кластеров и матрицей «кластер × признак» |
 | `data/processed/summary_table2_mo.csv`, `summary_table2.xlsx`, `summary_table2_print.html` | таблица 2 «Результаты кластеризации по периодам» для разбиения по умолчанию: уровень МО (CSV), Excel с цветами (МО, субъекты по числу МО и по населению, переходы), страница для печати (субъекты и переходы) |
