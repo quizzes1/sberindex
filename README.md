@@ -24,7 +24,8 @@ scripts/    download_data, build_inventory, build_panel, build_gmp, build_indica
             build_summary, run_all, update_runner
 src/        io, dictionary, bdmo, regional, panel, geo, gmp, indicators, normalize, network,
             prices, clustering, icvi, dynamics, convergence, summary, update
-app/        Home.py + pages/ (8 страниц), common.py
+app/        Home.py (меню), hub.py (стартовая: отчёт и презентация), overview.py + pages/ (8 страниц), common.py,
+            static/docs/ (PDF и страницы для просмотра; пересобрать: scripts/build_docs.py)
 notebooks/  01_quickstart.ipynb — панель, сеть, кластеры, динамика и конвергенция в коде
 tests/      pytest (данные, ВМП, нормировка, сеть, индексы, методы, динамика, конвергенция, интерфейс)
 data/       raw/ (не в git), processed/, geo/, networks/, clusters/
@@ -33,7 +34,7 @@ reports/    INVENTORY, DATA, METHODS, GMP_CHECKS, INDICATORS, NETWORKS, CLUSTERS
 
 ## Интерфейс
 
-`streamlit run app/Home.py`. Боковая панель (общая для всех страниц): выборка (вся Россия по умолчанию / пресет федерального округа / свой
+`streamlit run app/Home.py`. Стартовая страница «Отчёт и презентация» — презентация и методологический отчёт с просмотром на сайте и скачиванием PDF, ссылка на GitHub; дальше — страницы анализа. Боковая панель (общая для всех страниц): выборка (вся Россия по умолчанию / пресет федерального округа / свой
 список субъектов), годы, исключение МО со сменой границ, способ и область нормировки. Страницы:
 1. **Данные и качество** — покрытие показателей (тепловая карта) по годам и субъектам, МО с пропусками,
    непривязанные строки, найденные/не найденные источники;

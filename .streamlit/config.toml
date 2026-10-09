@@ -6,6 +6,7 @@ port = 8501
 fileWatcherType = "none"      # не перечитывать код на сервере
 maxUploadSize = 5             # МБ; интерфейс ничего не загружает
 enableXsrfProtection = true
+enableStaticServing = true    # app/static/ → /app/static/: PDF и страницы отчёта/презентации на стартовой странице
 
 [browser]
 gatherUsageStats = false

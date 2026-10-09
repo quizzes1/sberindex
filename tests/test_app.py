@@ -13,6 +13,8 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 
 PAGES = [
     "Home.py",
+    "hub.py",
+    "overview.py",
     "pages/1_Данные_и_качество.py",
     "pages/2_Показатели.py",
     "pages/3_Сеть.py",
@@ -74,3 +76,19 @@ def test_clusters_of_a_year_do_not_depend_on_window():
         assert not at.exception, [e.value for e in at.exception]
         out.append(sankey_2014(at))
     assert out[0] == out[1]
+
+
+def test_hub_documents_present_and_page_renders():
+    """Стартовая страница: оба PDF и все отрисованные страницы на месте, страница открывается без ошибок."""
+    docs = ROOT / "app" / "static" / "docs"
+    for name in ("presentation", "report"):
+        assert (docs / f"{name}.pdf").stat().st_size > 100_000
+        pages = sorted((docs / name).glob("[0-9][0-9].jpg"))
+        assert pages and pages[0].name == "01.jpg" and len(pages) == int(pages[-1].stem)
+    at = AppTest.from_file(str(ROOT / "app" / "Home.py"), default_timeout=300)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    html = " ".join(m.value for m in at.markdown)
+    assert "app/static/docs/presentation/01.jpg" in html and "app/static/docs/report.pdf" in html
+    next(b for b in at.button if b.label == "▶").click().run()
+    assert at.session_state["hub_slide"] == 2
