@@ -45,10 +45,7 @@ mode, method, k = cluster_controls(c0, c1, c2, exclude=("canus",))
 year = cluster_year(c3, side, "Год таблицы 1")
 st.caption(partition_badge(h, mode, method, k))
 pr = side["prices"]
-st.caption(
-    f"Сеть `{h}`; кластеры пронумерованы K1…Kn по убыванию медианы ВМП на душу в ценах {pr['base_year']} г. "
-    "(K1 — самый высокий). Режим «одна модель на все годы» — по умолчанию: номер кластера одинаков во всех годах."
-)
+st.caption("K1 — тип с самым высоким ВМП на душу, дальше по убыванию.")
 
 
 labels_of = cluster_partition  # общий кэш: то же разбиение, что на страницах «Кластеры» и «Динамика»
@@ -57,28 +54,26 @@ table1 = cluster_table1
 
 lab = labels_of(pj, method, k, mode)
 if year not in set(lab["year"]):
-    st.warning(f"В {year} г. нет МО с полным набором признаков сети.")
+    st.warning(f"В {year} году нет муниципалитетов со всеми нужными показателями.")
     st.stop()
 res = table1(pj, method, k, mode, year)
 key = f"{h}|{method}|k{k}|{mode}|{year}"
 t = summary.apply_descriptions(res["table"], key)
 
 # ---------------------------------------------------------------- таблица 1
-st.header("Таблица 1. Характерные признаки кластеров")
+st.header("Чем отличаются типы")
 th = summary.cfg()["characteristic"]["thresholds"]
 st.caption(
-    f"{year} г. Средний z-score признака по МО кластера (z — по всем МО выборки за год, денежные — в ценах "
-    f"{pr['base_year']} г., логарифм — по реестру). «Максимальные» — наибольшее среднее среди кластеров и z ≥ "
-    f"{th['extreme']}; «минимальные» — наименьшее и z ≤ −{th['extreme']}; «высокие» — z ≥ {th['high']}; «низкие» — "
-    f"z ≤ −{th['high']}; «близкие к среднему» — |z| < {th['high']}. Пороги — configs/summary.yaml."
+    f"{year} год. Описание собирается автоматически: для каждого показателя сравниваем тип со всеми "
+    f"муниципалитетами. «Высокие» и «низкие» — отклонение больше {th['high']} стандартного отклонения, "
+    f"«максимальные» и «минимальные» — больше {th['extreme']} и крайнее значение среди типов."
 )
 changed = t[t["правка"].eq("состав изменился")]
 if len(changed):
     st.warning(
-        "Состав кластеров "
+        "Состав типов "
         + ", ".join(changed["Кластер"])
-        + " изменился после ручной правки текста (пересчёт, другая сеть или данные): проверьте описание — "
-        "сохранённый текст показан, но писался для другого состава."
+        + " изменился с тех пор, как их описание правили вручную. Проверьте, подходит ли текст."
     )
 show = t[["Кластер", "Число МО", "Характерные признаки", "Примеры МО", "правка"]]
 st.dataframe(
@@ -94,7 +89,7 @@ st.dataframe(
     },
 )
 
-with st.expander("Исправить тексты (сохраняются в data/cluster_descriptions.yaml и не затираются при пересчёте)"):
+with st.expander("Исправить описания"):
     with st.form("desc"):
         new = {}
         for _, r in t.iterrows():
@@ -118,7 +113,7 @@ with st.expander("Исправить тексты (сохраняются в dat
             st.cache_data.clear()
             st.rerun()
 
-st.subheader("Развёрнутый вариант: средние значения признаков по кластерам")
+st.subheader("Средние значения показателей")
 raw, zz = res["raw"].copy(), res["z"].copy()
 raw.index = zz.index = [clustering.code(i) for i in raw.index]
 raw.columns = zz.columns = [res["names"][f] for f in res["features"]]
@@ -128,17 +123,14 @@ st.dataframe(
     ),
     width="stretch",
 )
-st.caption(
-    "Средние в исходных единицах (денежные — в ценах базового года); цвет — средний z-score: синий — ниже среднего по "
-    "МО выборки, красный — выше. Пропуски не заполняются: среднее — по МО, где показатель есть."
-)
+st.caption("Рубли — в ценах базового года. Синий — ниже среднего по стране, красный — выше.")
 
 title = (
     f"Характерные признаки кластеров, {year} г. ({METHOD_LABELS.get(method, method)}, k = {k}, "
     f"{'pooled' if mode == 'pooled' else 'по годам'}; денежные — в ценах {pr['base_year']} г.)"
 )
 st.download_button(
-    "⬇ Таблица 1 (Excel, с цветами)",
+    "Скачать в Excel",
     summary.table1_excel(res, t, title),
     f"table1_{year}.xlsx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -151,28 +143,27 @@ downloads(
 
 # ---------------------------------------------------------------- таблица 2
 st.divider()
-st.header("Таблица 2. Результаты кластеризации по периодам")
+st.header("Переходы между типами")
 pc = summary.cfg()["periods"]
 tcol = pc["trajectory_colors"]
 years_all = [
     int(y) for y in sorted(lab["year"].unique()) if side["years"][0] <= y <= side["years"][1]
 ]  # окно — только показ
 if len(years_all) < 2:
-    st.info("Для таблицы 2 нужно окно хотя бы из двух лет — расширьте «Годы» в боковой панели.")
+    st.info("Нужно хотя бы два года — расширьте «Годы» в боковой панели.")
     st.stop()
 periods = table2_periods(years_all, st)
 if len(periods) < 2:
     st.info("Выберите хотя бы два года.")
     st.stop()
 st.caption(
-    "В ячейке — кластер МО в этом году (K1 — самый высокий ВМП на душу в ценах базового года; «—» — МО нет в сети года: "
-    "не хватает признаков). Траектория: **стабильный** — один кластер во всех периодах; **рост** — номер только "
-    "уменьшается (переход к кластеру с более высоким ВМП); **снижение** — только растёт; **колебание** — и то и другое."
+    "В ячейке — тип муниципалитета в этом году, прочерк — не хватает данных. **Стабильный** — тип не менялся, "
+    "**рост** — переходил только в типы с более высоким ВМП, **снижение** — только в более низкие, "
+    "**колебание** — и вверх, и вниз."
     + (
         ""
         if mode == "pooled"
-        else " ⚠️ Режим «каждый год отдельно»: номера K упорядочены по ВМП внутри каждого года, но состав кластеров "
-        "разных лет определён разными моделями — переходы отчасти отражают перекластеризацию."
+        else " Сейчас каждый год считается отдельно, поэтому часть переходов — просто разница между моделями лет."
     )
 )
 
@@ -195,6 +186,7 @@ def row_style_str(r, lc):
 
 
 def style_labels(df: pd.DataFrame, label_cols: list):
+    """Таблица периодов для показа: ячейки меток — цвет кластера, строки — цвет траектории."""
     view = df.copy()
     for y in label_cols:
         view[y] = view[y].map(summary.label_text)
@@ -203,16 +195,16 @@ def style_labels(df: pd.DataFrame, label_cols: list):
     return view.style.apply(lambda r: row_style_str(r, lc), axis=1)
 
 
-tab_mo, tab_subj, tab_sum = st.tabs(["Уровень МО", "Уровень субъектов (для отчёта)", "Сводка переходов"])
+tab_mo, tab_subj, tab_sum = st.tabs(["Муниципалитеты", "Субъекты", "Итоги по округам"])
 
 with tab_mo:
     f1, f2, f3 = st.columns([2, 1, 1])
-    q = f1.text_input("Поиск по названию МО или субъекта", "")
+    q = f1.text_input("Поиск по названию", "")
     f_fd = f2.multiselect("Федеральный округ", sorted(mt["ФО"].dropna().unique()))
-    f_type = f3.multiselect("Тип МО", sorted(mt["тип МО"].dropna().unique()))
+    f_type = f3.multiselect("Вид образования", sorted(mt["тип МО"].dropna().unique()))
     f4, f5, f6 = st.columns([2, 1, 1])
     f_reg = f4.multiselect("Субъект", sorted(mt["Субъект"].dropna().unique()))
-    f_cl = f5.multiselect("Кластер (хотя бы в одном периоде)", [clustering.code(i) for i in range(k)])
+    f_cl = f5.multiselect("Был в типе", [clustering.code(i) for i in range(k)])
     f_tr = f6.multiselect("Траектория", summary.TRAJECTORIES)
     v = mt
     if q:
@@ -232,17 +224,14 @@ with tab_mo:
     sort_by = s1.selectbox(
         "Сортировка",
         ["№", "Субъект", "МО", "тип МО", "траектория", *periods],
-        format_func=lambda c: f"кластер {c} г." if isinstance(c, int) else c,
+        format_func=lambda c: f"тип в {c} году" if isinstance(c, int) else c,
     )
     desc = s2.checkbox("по убыванию", value=False)
     v = v.sort_values(sort_by, ascending=not desc, kind="stable", na_position="last")
     size = int(pc["page_size"])
     pages = max(1, -(-len(v) // size))
     page = s3.number_input(f"Страница (из {pages})", 1, pages, 1)
-    st.caption(
-        f"Найдено МО: {len(v)} из {len(mt)}. Цвет строки — траектория: рост — зелёный, снижение — красный, "
-        "колебание — жёлтый; стабильные и без данных — без цвета."
-    )
+    st.caption(f"Найдено {len(v)} из {len(mt)}. Зелёный — рост, красный — снижение, жёлтый — колебание.")
     cols = ["№", "Субъект", "МО", "тип МО", *periods, "траектория"]
     part_v = v[cols].iloc[(page - 1) * size : page * size]
     if len(part_v):
@@ -253,7 +242,7 @@ with tab_mo:
     for y in periods:
         csv_mo[y] = csv_mo[y].map(summary.label_text)
     st.download_button(
-        "⬇ Таблица МО с учётом фильтров (CSV)",
+        "Скачать найденное (CSV)",
         csv_mo.to_csv(index=False).encode("utf-8-sig"),
         "table2_mo.csv",
         "text/csv",
@@ -261,16 +250,16 @@ with tab_mo:
 
 with tab_subj:
     by = st.radio(
-        "Доля в доминирующем кластере",
+        "Считать долю",
         ["count", "pop"],
         horizontal=True,
-        format_func={"count": "по числу МО", "pop": "по населению"}.get,
+        format_func={"count": "по числу муниципалитетов", "pop": "по населению"}.get,
     )
     sv = sc if by == "count" else sp
     st.caption(
-        "Строка — субъект; в ячейке — доминирующий кластер МО субъекта в этом году и доля "
-        + ("МО субъекта в нём." if by == "count" else "населения субъекта (по МО в сети) в МО этого кластера.")
-        + " Траектория — по доминирующему кластеру. «МО» — число МО субъекта в сети последнего периода."
+        "В ячейке — самый частый тип в субъекте и доля "
+        + ("муниципалитетов" if by == "count" else "жителей")
+        + " этого типа. Траектория считается по самому частому типу."
     )
     show_s = sv.copy()
     lc = [str(y) for y in periods]
@@ -283,7 +272,7 @@ with tab_subj:
     )
 
 with tab_sum:
-    st.caption("Число и доля МО по траекториям — по всей выборке и по федеральным округам.")
+    st.caption("Сколько муниципалитетов с каждой траекторией — по стране и по округам.")
     sm_show = sm.copy()
     st.dataframe(
         sm_show.style.format({c: "{:.1f}" for c in sm_show.columns if str(c).endswith("%")}),
@@ -312,13 +301,13 @@ title2 = (
 )
 d1, d2 = st.columns(2)
 d1.download_button(
-    "⬇ Таблица 2 (Excel, с цветами: МО, субъекты, переходы)",
+    "Скачать в Excel",
     summary.table2_excel(mt, sc, sp, sm, periods, title2),
     "table2.xlsx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 d2.download_button(
-    "⬇ Страница для печати (HTML: субъекты и переходы)",
+    "Версия для печати",
     summary.table2_html(
         sv,
         sm,

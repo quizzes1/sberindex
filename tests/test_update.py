@@ -1,4 +1,4 @@
-"""Обновление данных с сайта (src/update.py, этап 7 доработки)."""
+"""Обновление данных с сайта (src/update.py)."""
 
 from __future__ import annotations
 

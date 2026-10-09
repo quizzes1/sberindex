@@ -17,14 +17,14 @@ st.set_page_config(page_title="Обновление данных", layout="wide"
 sidebar()
 st.title("Обновление данных")
 st.markdown(
-    "Здесь любой посетитель сайта может **скачать свежие данные и пересчитать результаты**: панель, ВМП, "
-    "показатели, сети, кластеры, динамику, конвергенцию и сводные таблицы. Код и настройки по умолчанию через сайт не "
-    "меняются. Пересчёт идёт на сервере в фоне — страницу можно закрыть; одновременно идёт не больше одного пересчёта. "
-    "Когда он закончится, все страницы сами перечитают новые данные."
+    "Здесь можно скачать свежие данные и пересчитать все результаты. Код и настройки при этом не меняются. "
+    "Пересчёт идёт на сервере, страницу можно закрыть; одновременно идёт только один. Когда он закончится, "
+    "все страницы покажут новые данные."
 )
 
 
 def fmt_age(ts: str | None) -> str:
+    """Дата и время в виде «09.10.2026 12:30 (15 мин назад)»."""
     if not ts:
         return "—"
     try:
@@ -37,26 +37,28 @@ def fmt_age(ts: str | None) -> str:
 
 @st.fragment(run_every=10)
 def status_block() -> None:
+    """Блок состояния пересчёта; обновляется сам каждые 10 секунд."""
     stt = update.read_status()
     state = stt.get("state", "idle")
     mode = update.MODES.get(stt.get("mode"), {}).get("name", "—")
     if state == "running":
-        st.info(f"⏳ Идёт: **{mode}**, запущено {fmt_age(stt.get('started'))}. Состояние обновляется каждые 10 с.")
+        st.info(f"Идёт: **{mode}**, начато {fmt_age(stt.get('started'))}. Статус обновляется каждые 10 секунд.")
         done = update.steps_done()
         if done:
             st.caption("Готовые шаги: " + " · ".join(done))
         st.code(update.tail(25) or "журнал пока пуст", language=None)
     elif state == "done":
         st.success(
-            f"✅ Последний пересчёт — **{mode}** — завершён {fmt_age(stt.get('finished'))} за {stt.get('minutes', '—')} мин."
+            f"Последний пересчёт ({mode}) закончился {fmt_age(stt.get('finished'))}, "
+            f"занял {stt.get('minutes', '—')} мин."
         )
     elif state == "failed":
         st.error(
-            f"❌ Последний пересчёт — **{mode}** — завершился с ошибкой ({stt.get('note') or 'код ' + str(stt.get('code'))}), "
-            f"{fmt_age(stt.get('finished'))}. Данные на сайте — частично новые: повторите пересчёт; журнал — ниже."
+            f"Последний пересчёт ({mode}) прервался: {stt.get('note') or 'код ' + str(stt.get('code'))}, "
+            f"{fmt_age(stt.get('finished'))}. Часть данных уже новая — запустите пересчёт ещё раз. Подробности в журнале."
         )
     else:
-        st.caption("С сайта пересчёт ещё не запускался.")
+        st.caption("Пересчёт с сайта ещё не запускали.")
 
 
 status_block()
@@ -65,7 +67,7 @@ stt = update.read_status()
 running = stt.get("state") == "running"
 has_raw = (RAW / "sber").exists() and (RAW / "tochno").exists()
 
-st.subheader("Запустить")
+st.subheader("Запуск")
 mode = st.radio(
     "Что сделать",
     list(update.MODES),
@@ -75,9 +77,7 @@ mode = st.radio(
 st.caption(update.MODES[mode]["about"])
 need_raw = mode != "download" and not has_raw
 if need_raw:
-    st.warning(
-        "Исходников в data/raw нет (на сервер из репозитория попадают только готовые результаты) — выберите «Скачать свежие данные и пересчитать»."
-    )
+    st.warning("На сервере ещё нет исходных данных. Начните с «Скачать свежие данные и пересчитать».")
 ok = st.checkbox(
     "Понимаю: пока идёт пересчёт, страницы показывают частично обновлённые результаты, а сервер загружен.",
     disabled=running,
@@ -93,20 +93,20 @@ if need_pw:
 if st.button("▶ Запустить", type="primary", disabled=running or not ok or need_raw or not pw_ok):
     res = update.start(mode)
     if res.get("mode") != mode and res.get("state") == "running":
-        st.warning("Пересчёт уже идёт (его запустил кто-то другой) — второй не запускается.")
+        st.warning("Пересчёт уже запущен кем-то другим, второй не начнётся.")
     st.rerun()
 if running:
     st.caption("Кнопка недоступна, пока идёт пересчёт.")
 
-st.subheader("Журнал последнего пересчёта")
+st.subheader("Журнал")
 if update.LOG.exists():
     with st.expander("Последние 200 строк"):
         st.code(update.tail(200), language=None)
-    st.download_button("⬇ Журнал целиком", update.LOG.read_bytes(), "run.log", "text/plain", key="dl_log")
+    st.download_button("Скачать журнал", update.LOG.read_bytes(), "run.log", "text/plain", key="dl_log")
 else:
-    st.caption("Журнала нет.")
+    st.caption("Журнала пока нет.")
 
-st.subheader("Свежесть данных")
+st.subheader("Когда обновлялись данные")
 rows = []
 for name, p in [
     ("показатели (indicators_wide)", PROCESSED / "indicators_wide.parquet"),
@@ -140,7 +140,6 @@ if failed.exists() and failed.read_text(encoding="utf-8").strip():
     with st.expander("Источники, которые не скачались в последний раз"):
         st.code(failed.read_text(encoding="utf-8"), language=None)
 st.caption(
-    "Режимы «Пересчитать» работают с уже скачанными исходниками в data/raw. На свежем сервере их нет (в репозитории "
-    "только готовые результаты) — начните со «Скачать свежие данные». Сайты СберИндекса и Росстата бывают недоступны "
-    "из-за рубежа: тогда скачивание не пройдёт, а прежние файлы останутся."
+    "«Пересчитать» работает с уже скачанными данными. Если сайты СберИндекса или Росстата недоступны, "
+    "скачивание не пройдёт, но прежние файлы останутся."
 )

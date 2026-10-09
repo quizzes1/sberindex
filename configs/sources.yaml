@@ -64,7 +64,7 @@ rosstat:
     url: https://rosstat.gov.ru/storage/mediabank/ponyatiya-i-opredeleniya-vgp.pdf
     dest: rosstat/ponyatiya-i-opredeleniya-vgp.pdf
     note: "Методика ВГП Росстата"
-  # --- индексы цен (этап 3 доработки): по России помесячно → индексы «в среднем за год к предыдущему году»;
+  # --- индексы цен: по России помесячно → индексы «в среднем за год к предыдущему году»;
   #     по субъектам — «декабрь к декабрю» (ИПЦ до 2025 г.). Имена файлов Росстат меняет с каждым выпуском —
   #     при ошибке загрузки найдите актуальное имя на https://rosstat.gov.ru/statistics/price
   - id: cpi_rf_monthly

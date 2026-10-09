@@ -33,18 +33,27 @@ FDS = ["ЦФО", "СЗФО", "ЮФО", "СКФО", "ПФО", "УФО", "СФО",
 
 
 def cluster_color(i: int) -> str:
+    """Цвет кластера по номеру (K1 — первый цвет палитры); после восьмого — серый."""
     return CATEGORICAL[i] if 0 <= i < len(CATEGORICAL) else OTHER_GRAY
 
 
 def layout(fig: go.Figure, height: int = 420, **kw) -> go.Figure:
-    """Сдержанное оформление: тонкая сетка, без лишних рамок, подписи — текстовыми цветами."""
+    """Сдержанное оформление: тонкая сетка, без лишних рамок, шрифт сайта (Onest).
+
+    Если есть и заголовок, и легенда, заголовок стоит в самом верху, а легенда — между ним и графиком,
+    чтобы они не налезали друг на друга."""
+    has_title = bool(kw.get("title"))
+    has_legend = sum(1 for t in fig.data if t.showlegend is not False and t.name) > 1
     fig.update_layout(
         height=height,
-        margin=dict(l=10, r=10, t=40, b=10),
-        hoverlabel=dict(namelength=-1),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+        margin=dict(l=10, r=10, t=86 if has_title and has_legend else 44, b=10),
+        font=dict(family="Onest, sans-serif"),
+        hoverlabel=dict(namelength=-1, font=dict(family="Onest, sans-serif")),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, title_text=""),
         **kw,
     )
+    if has_title:
+        fig.update_layout(title_x=0, title_xanchor="left", title_y=0.985, title_yanchor="top", title_font_size=15)
     fig.update_xaxes(showgrid=False, zeroline=False)
     fig.update_yaxes(gridcolor="rgba(128,128,128,0.15)", zeroline=False)
     return fig
@@ -53,21 +62,25 @@ def layout(fig: go.Figure, height: int = 420, **kw) -> go.Figure:
 # ---------------------------------------------------------------- данные (кэш)
 @st.cache_resource(show_spinner=False)  # один общий объект на процесс: только чтение
 def mo() -> pd.DataFrame:
+    """Справочник муниципалитетов (общий кэш, только чтение)."""
     return pd.read_parquet(PROCESSED / "mo.parquet")
 
 
 @st.cache_resource(show_spinner=False)  # один общий объект на процесс: только чтение
 def indicators_wide() -> pd.DataFrame:
+    """Показатели в широком виде: строка — муниципалитет × год (общий кэш, только чтение)."""
     return pd.read_parquet(PROCESSED / "indicators_wide.parquet")
 
 
 @st.cache_resource(show_spinner=False)  # один общий объект на процесс: только чтение
 def registry() -> pd.DataFrame:
+    """Раскрытый реестр показателей (общий кэш, только чтение)."""
     return pd.read_parquet(PROCESSED / "indicator_registry.parquet")
 
 
 @st.cache_resource(show_spinner=False)  # один общий объект на процесс: только чтение
 def panel_long() -> pd.DataFrame:
+    """Панель в длинном виде: муниципалитет × год × ряд (общий кэш, только чтение)."""
     return pd.read_parquet(PROCESSED / "panel_long.parquet")
 
 
@@ -87,6 +100,7 @@ COARSE_FROM = 800  # с какого числа МО на карте брать 
 
 
 def regions_table() -> pd.DataFrame:
+    """Субъекты с федеральным округом и числом муниципалитетов."""
     m = mo()
     return m.groupby(["region_code", "region_name", "federal_district"]).size().rename("МО").reset_index()
 
@@ -171,17 +185,15 @@ def sidebar() -> dict:
     _mark_page()
     upd = refresh_after_update()
     if upd.get("state") == "running":
-        st.sidebar.warning(
-            "Идёт пересчёт данных (страница «Обновление данных»): пока он не закончится, результаты могут быть неполными."
-        )
+        st.sidebar.warning("Сейчас идёт пересчёт данных. Пока он не закончится, цифры могут быть неполными.")
     netd = network.default_params()
     pdef = prices.price_params()
-    st.sidebar.header("Выборка и предобработка")
+    st.sidebar.header("Выборка")
     options = ["Россия", *FDS, "Свой список субъектов"]  # вся Россия по умолчанию; округа — пресеты
     if keep("sample_kind", "Россия") not in options:
         s["sample_kind"] = "Россия"
     kind = st.sidebar.selectbox(
-        "Выборка", options, key="sample_kind", format_func=lambda x: "Вся Россия" if x == "Россия" else x
+        "Территория", options, key="sample_kind", format_func=lambda x: "Вся Россия" if x == "Россия" else x
     )
     regions: list[int] = []
     if kind == "Свой список субъектов":
@@ -195,25 +207,25 @@ def sidebar() -> dict:
         s["years_sel"] = (max(YEARS_MIN, min(yv[0], YEARS_MAX)), max(YEARS_MIN, min(yv[1], YEARS_MAX)))
     years = st.sidebar.slider("Годы", YEARS_MIN, YEARS_MAX, key="years_sel")
     keep("excl_bc", bool(netd["sample"].get("exclude_boundary_change", False)))
-    excl = st.sidebar.checkbox("Исключить МО со сменой границ", key="excl_bc")
+    excl = st.sidebar.checkbox("Без муниципалитетов, менявших границы", key="excl_bc")
     keep("norm_method", netd["preprocess"]["method"])
     method = st.sidebar.selectbox(
         "Нормировка",
         ["minmax", "zscore"],
         key="norm_method",
-        format_func={"minmax": "min-max в [0, 1]", "zscore": "z-score"}.get,
+        format_func={"minmax": "от 0 до 1 (min-max)", "zscore": "стандартизация (z-score)"}.get,
     )
     keep("norm_scope", netd["preprocess"]["scope"])
     scope = st.sidebar.selectbox(
-        "Область нормировки",
+        "Нормировать",
         ["panel", "year"],
         key="norm_scope",
-        format_func={"panel": "вся панель (рекомендуется)", "year": "каждый год отдельно"}.get,
+        format_func={"panel": "по всем годам сразу", "year": "по каждому году"}.get,
     )
     if scope == "year":
         st.sidebar.caption(
-            "⚠️ При нормировке по годам общий рост показателей исчезает, и «переходы» между "
-            "кластерами во времени отчасти становятся артефактом нормировки."
+            "При нормировке по каждому году общий рост показателей пропадает, и часть переходов между типами "
+            "получается из-за шкалы, а не из-за экономики."
         )
     st.sidebar.header("Цены")
     keep("price_values", pdef["values"])
@@ -222,11 +234,11 @@ def sidebar() -> dict:
         ["real", "nominal"],
         key="price_values",
         horizontal=True,
-        format_func={"real": "в ценах базового года", "nominal": "в текущих ценах"}.get,
+        format_func={"real": "в ценах одного года", "nominal": "в ценах своего года"}.get,
     )
     keep("price_base_year", int(pdef["base_year"]))
     base_year = st.sidebar.selectbox(
-        "Базовый год цен", list(range(YEARS_MIN, YEARS_MAX + 1)), key="price_base_year", disabled=values == "nominal"
+        "Цены какого года", list(range(YEARS_MIN, YEARS_MAX + 1)), key="price_base_year", disabled=values == "nominal"
     )
     keep("price_scope", pdef["deflator_scope"])
     dscope = st.sidebar.selectbox(
@@ -234,26 +246,24 @@ def sidebar() -> dict:
         ["national", "regional"],
         key="price_scope",
         disabled=values == "nominal",
-        format_func={"national": "по России (точные среднегодовые)", "regional": "по субъектам (приближённо)"}.get,
+        format_func={"national": "по России", "regional": "по субъектам (приблизительно)"}.get,
     )
     keep("price_spatial", bool(pdef["spatial_price_adjustment"]))
     spatial = st.sidebar.checkbox(
-        "Поправка на межрегиональные различия цен",
+        "Учитывать разницу цен между регионами",
         key="price_spatial",
         disabled=values == "nominal",
-        help="Делит потребительские суммы (зарплата, ФОТ, бюджет, розница) на стоимость фиксированного набора "
-        "товаров и услуг в субъекте относительно России.",
+        help="Учитывает, что в разных регионах жизнь стоит по-разному: зарплаты, ФОТ, бюджет и розница делятся "
+        "на стоимость одинакового набора товаров и услуг в регионе относительно средней по России.",
     )
     if values == "nominal":
-        st.sidebar.caption(
-            "⚠️ Текущие цены: сравнение лет искажено инфляцией. Конвергенция всегда считается в реальных."
-        )
+        st.sidebar.caption("В ценах своего года годы сравнивать нельзя: мешает инфляция.")
     if st.sidebar.button("Сбросить настройки", help="Вернуть значения по умолчанию на всех страницах"):
         for k in (*SIDEBAR_KEYS, "net_override", "cl_mode", "cl_method", "cl_k", "cl_year", "t2_periods"):
             s.pop(k, None)
             s.pop("_" + k, None)
         st.rerun()
-    st.sidebar.caption("ВМП — расчётная оценка команды, не официальная статистика.")
+    st.sidebar.caption("ВМП — наша расчётная оценка, а не данные Росстата.")
     remember(*SIDEBAR_KEYS)
     # [] — вся Россия (как в configs/network.yaml, чтобы хэш совпадал с готовыми результатами)
     fds = [kind] if kind in FDS else []
@@ -292,6 +302,7 @@ def cluster_partition(pj: str, method: str, k: int, mode: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner="Считаю характерные признаки…", max_entries=32)
 def cluster_table1(pj: str, method: str, k: int, mode: str, year: int) -> dict:
+    """Таблица 1 (характерные признаки кластеров) для разбиения и года, общий кэш."""
     from src import summary
 
     return summary.characteristic_table(cluster_partition(pj, method, k, mode), json.loads(pj), year)
@@ -299,6 +310,7 @@ def cluster_table1(pj: str, method: str, k: int, mode: str, year: int) -> dict:
 
 @st.cache_data(show_spinner=False, max_entries=16)
 def cluster_table2(pj: str, method: str, k: int, mode: str, periods: tuple[int, ...]):
+    """Таблица 2 (кластеры по периодам): уровень МО, субъекты по числу МО и по населению, сводка."""
     from src import summary
 
     lb = cluster_partition(pj, method, k, mode)
@@ -314,13 +326,13 @@ def cluster_table2(pj: str, method: str, k: int, mode: str, periods: tuple[int, 
 
 METHOD_NAMES = {
     "kmeans": "k-средних",
-    "ward": "иерархическая Уорда",
+    "ward": "метод Уорда",
     "ward_kmeans": "Уорд + k-means",
     "gmm": "гауссовы смеси",
-    "leiden": "Leiden (граф)",
-    "spectral": "спектральная (граф)",
-    "kefrin": "KEFRiN (атрибутированная сеть)",
-    "canus": "CANUS (атрибутированная сеть, медленный)",
+    "leiden": "Leiden (по сети)",
+    "spectral": "спектральный (по сети)",
+    "kefrin": "KEFRiN (показатели и сеть)",
+    "canus": "CANUS (показатели и сеть, медленный)",
 }
 
 
@@ -336,9 +348,9 @@ def cluster_controls(c_mode, c_method, c_k, exclude: tuple[str, ...] = ()) -> tu
         "Режим",
         ["pooled", "per_year"],
         key="cl_mode",
-        format_func={"pooled": "одна модель на все годы (по умолчанию)", "per_year": "каждый год отдельно"}.get,
-        help="pooled — одна модель на все МО-годы (методы по атрибутам): номер кластера одинаков во всех годах. "
-        "«Каждый год отдельно» — номера K1…Kn по ВМП на душу внутри года.",
+        format_func={"pooled": "одна модель на все годы", "per_year": "каждый год отдельно"}.get,
+        help="Одна модель на все годы: тип K2 в 2014 и в 2024 году означает одно и то же, поэтому переходы между "
+        "типами видны честно. Каждый год отдельно: типы пересчитываются заново и нумеруются по ВМП внутри года.",
     )
     methods = [m for m in clustering_cfg()["methods"] if clustering.available(m)[0] and m not in exclude]
     if mode == "pooled":
@@ -348,7 +360,7 @@ def cluster_controls(c_mode, c_method, c_k, exclude: tuple[str, ...] = ()) -> tu
         s["cl_method"] = default_m
     method = c_method.selectbox("Метод", methods, key="cl_method", format_func=lambda m: METHOD_NAMES.get(m, m))
     keep("cl_k", d["k"])
-    k = c_k.slider("Число кластеров k", 2, 10, key="cl_k")
+    k = c_k.slider("Число типов", 2, 10, key="cl_k")
     remember("cl_mode", "cl_method", "cl_k")
     return mode, method, int(k)
 
@@ -383,17 +395,24 @@ def table2_periods(years_all: list[int], col=None) -> list[int]:
         "Периоды (годы)",
         years_all,
         key="t2_periods",
-        help="По умолчанию — три равноудалённых года окна: начало, середина, конец.",
+        help="По умолчанию — начало, середина и конец выбранных лет.",
     )
     remember("t2_periods")
     return sorted(out)
+
+
+def plural(n: int, one: str, few: str, many: str) -> str:
+    """Склонение по числу: plural(1, "тип", "типа", "типов") → «1 тип», 3 → «3 типа», 5 → «5 типов»."""
+    n10, n100 = abs(n) % 10, abs(n) % 100
+    word = one if n10 == 1 and n100 != 11 else few if 2 <= n10 <= 4 and not 12 <= n100 <= 14 else many
+    return f"{n} {word}"
 
 
 def partition_badge(h: str, mode: str, method: str, k: int) -> str:
     """Строка параметров разбиения — одна и та же на страницах «Кластеры», «Динамика», «Сводные таблицы»:
     если она совпадает, совпадают и кластеры."""
     m = "одна модель на все годы" if mode == "pooled" else "каждый год отдельно"
-    return f"Разбиение: сеть `{h}` · {m} · {METHOD_NAMES.get(method, method)} · k = {k}"
+    return f"{METHOD_NAMES.get(method, method)}, {plural(k, 'тип', 'типа', 'типов')}, {m}. Сеть `{h}`."
 
 
 def current_partition_params(side: dict) -> tuple[dict, str, str, str, int]:
@@ -413,6 +432,7 @@ def current_partition_params(side: dict) -> tuple[dict, str, str, str, int]:
 
 
 def network_family(method: str) -> str:
+    """Семейство метода кластеризации: attributes | graph | attributed_network."""
     from src import clustering
 
     return clustering.FAMILIES.get(method, "")
@@ -494,7 +514,7 @@ def downloads(table: pd.DataFrame | None, params: dict, name: str) -> None:
         buf = io.StringIO()
         table.to_csv(buf, index=False)
         c1.download_button(
-            "⬇ Таблица (CSV)", buf.getvalue().encode("utf-8-sig"), f"{name}.csv", "text/csv", key=f"dl_csv_{name}"
+            "Скачать таблицу (CSV)", buf.getvalue().encode("utf-8-sig"), f"{name}.csv", "text/csv", key=f"dl_csv_{name}"
         )
     p = json.loads(
         json.dumps(
@@ -504,7 +524,7 @@ def downloads(table: pd.DataFrame | None, params: dict, name: str) -> None:
         )
     )
     c2.download_button(
-        "⬇ Параметры (YAML)",
+        "Скачать параметры (YAML)",
         yaml.safe_dump(p, allow_unicode=True, sort_keys=False).encode("utf-8"),
         f"{name}_params.yaml",
         "text/yaml",
@@ -683,10 +703,7 @@ def force_layout(edges: pd.DataFrame, nodes: tuple[int, ...], seed: int = 42) ->
 def force_tab(edges: pd.DataFrame, labels: pd.Series | None = None, title: str = "", key: str = "force") -> None:
     """Вкладка «Силовая раскладка»: на больших сетях — по переключателю, чтобы не тормозить страницу."""
     n = len(labels) if labels is not None else len(set(edges["source"]) | set(edges["target"]))
-    if n > FORCE_ON_DEMAND and not st.toggle(f"Построить раскладку ({n} узлов, ~5–10 с)", key=key):
-        st.caption(
-            "Силовая раскладка большой сети считается несколько секунд — включите переключатель, чтобы построить."
-        )
+    if n > FORCE_ON_DEMAND and not st.toggle(f"Показать раскладку ({n} узлов, займёт несколько секунд)", key=key):
         return
     st.plotly_chart(graph_force(edges, labels, title=title), width="stretch")
 
@@ -744,6 +761,7 @@ def graph_force(edges: pd.DataFrame, labels: pd.Series | None = None, seed: int 
 
 # ---------------------------------------------------------------- прочее
 def cluster_dir(net_hash: str) -> Path:
+    """Каталог готовых результатов кластеризации для сети с хэшем h."""
     return DATA / "clusters" / net_hash
 
 
@@ -751,16 +769,19 @@ NAMES_FILE = DATA / "cluster_names.yaml"
 
 
 def load_names() -> dict:
+    """Названия кластеров, заданные аналитиками (data/cluster_names.yaml)."""
     if NAMES_FILE.exists():
         return yaml.safe_load(NAMES_FILE.read_text(encoding="utf-8")) or {}
     return {}
 
 
 def save_names(key: str, names: dict) -> None:
+    """Сохранить названия кластеров для разбиения key в data/cluster_names.yaml."""
     allnames = load_names()
     allnames[key] = {int(k): v for k, v in names.items() if v}
     NAMES_FILE.write_text(yaml.safe_dump(allnames, allow_unicode=True, sort_keys=True), encoding="utf-8")
 
 
 def clustering_cfg() -> dict:
+    """Параметры методов кластеризации (configs/clustering.yaml)."""
     return load_yaml("clustering.yaml")

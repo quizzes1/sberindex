@@ -30,7 +30,7 @@ from src.io import load_yaml
 
 st.set_page_config(page_title="Динамика", layout="wide")
 side = sidebar()
-st.title("Динамика типов")
+st.title("Динамика")
 
 cc = clustering_cfg()
 dc = load_yaml("dynamics.yaml")
@@ -43,11 +43,7 @@ pj = json.dumps(params, sort_keys=True, ensure_ascii=False)
 c1, c2, c3, c4 = st.columns(4)
 mode, method, k = cluster_controls(c1, c2, c3, exclude=("canus",))
 st.caption(partition_badge(network.config_hash(params), mode, method, k))
-thr = c4.slider("Порог Жаккара (режим «каждый год заново»)", 0.0, 0.9, float(dc["matching"]["min_jaccard"]), 0.05)
-st.caption(
-    "Режим «одна модель на всю панель» — решение команды: типы общие для всех лет, и смена типа означает "
-    "изменение показателей МО, а не перекластеризацию года (при «каждый год заново» заметная часть переходов — шум)."
-)
+thr = float(dc["matching"]["min_jaccard"])
 
 
 def partition(pj: str, mode: str, method: str, k: int) -> pd.DataFrame:
@@ -59,22 +55,25 @@ lab = partition(pj, mode, method, k)
 # сквозные типы K1…Kn: 0 → K1 — самый высокий ВМП на душу в ценах базового года
 numbering = "rank"
 if mode == "per_year":
-    numbering = st.radio(
-        "Нумерация типов по годам",
+    n1, n2 = st.columns([3, 1])
+    numbering = n1.radio(
+        "Как нумеровать типы по годам",
         ["rank", "jaccard"],
         index=["rank", "jaccard"].index(dc["matching"].get("numbering", "rank")),
         horizontal=True,
         format_func={
-            "rank": "K1…Kn по ВМП внутри года — как на страницах «Кластеры» и «Сводные таблицы»",
-            "jaccard": "сопоставление соседних лет по Жаккару (номера могут отличаться от других страниц)",
+            "rank": "по ВМП внутри года, как на других страницах",
+            "jaccard": "по сходству состава с прошлым годом",
         }.get,
     )
+    if numbering == "jaccard":
+        thr = n2.slider("Минимальное сходство", 0.0, 0.9, thr, 0.05, help="Мера Жаккара: доля общих муниципалитетов.")
 th = dynamics.through_labels(lab, mode, thr, params["prices"], numbering=numbering)
 # модель — на полной панели (номера и состав кластеров не зависят от окна); окно боковой панели — только показ
 vy0, vy1 = side["years"]
 th = th[th["year"].between(vy0, vy1)].reset_index(drop=True)
 if th["year"].nunique() < 2:
-    st.info("Для динамики нужно окно хотя бы из двух лет — расширьте «Годы» в боковой панели.")
+    st.info("Нужно хотя бы два года — расширьте «Годы» в боковой панели.")
     st.stop()
 st.session_state["types_last"] = th[th["year"].eq(th["year"].max())].set_index("territory_id")["through"].to_dict()
 summ = dynamics.year_summary(th)
@@ -82,7 +81,7 @@ tr = dynamics.transitions(th)
 mig = dynamics.migrants(th)
 years = sorted(th["year"].unique())
 
-st.subheader("Переходы между типами (диаграмма Санки)")
+st.subheader("Переходы между типами")
 nodes = [(y, t) for y in years for t in sorted(th.loc[th["year"].eq(y), "through"].unique())]
 idx = {n: i for i, n in enumerate(nodes)}
 cnt = th.groupby(["year", "through"]).size()
@@ -117,31 +116,29 @@ fig.update_layout(
     ],
 )
 st.plotly_chart(fig, width="stretch")
-st.caption(
-    "Колонки — годы, узлы — типы K1…Kn (K1 — самый высокий ВМП на душу в ценах базового года), ленты — МО, "
-    "перешедшие из типа в тип. В режиме pooled тип одинаково определён во всех годах; в режиме «каждый год отдельно» "
-    + (
-        "номер — место кластера по ВМП внутри года, как на странице «Кластеры»."
-        if numbering == "rank"
-        else "кластеры соседних лет сопоставлены по мере Жаккара — номера могут отличаться от страницы «Кластеры»."
-    )
-)
+st.caption("Столбцы — годы, полосы — муниципалитеты, перешедшие из одного типа в другой. K1 — самый высокий ВМП.")
 
-st.subheader("Размер кластеров по годам (число МО)")
+st.subheader("Сколько муниципалитетов в каждом типе")
 sizes = pd.crosstab(th["through"].map(clustering.code), th["year"])
 sizes.index.name = "кластер"
 sizes.columns = [str(c) for c in sizes.columns]
 sizes.loc["всего"] = sizes.sum()
 st.dataframe(sizes, width="stretch")
-st.caption(
-    "Полный размер кластера в каждом году — совпадает с числом МО кластера на странице «Кластеры» за тот же год "
-    "(при тех же параметрах разбиения, строка выше). Числа в матрице переходов ниже меньше: там только МО, которые "
-    "есть в сети в обоих выбранных годах, по парам «из кластера → в кластер»."
-)
+st.caption("Эти числа совпадают со страницей «Кластеры» за тот же год.")
 
-st.subheader("Устойчивость по годам")
+st.subheader("Насколько устойчивы типы")
 c1, c2 = st.columns([2, 3])
-c1.dataframe(summ.style.format({"ARI": "{:.2f}", "доля сменивших тип": "{:.0%}"}), width="stretch")
+summ_show = summ.drop(
+    columns=[c for c in ("новых типов", "исчезло типов") if numbering == "rank" or mode == "pooled"], errors="ignore"
+).rename(columns={"year_from": "из года", "year_to": "в год"})
+c1.dataframe(
+    summ_show.style.format({"ARI": "{:.2f}", "доля сменивших тип": "{:.0%}"}),
+    width="stretch",
+    hide_index=True,
+    column_config={
+        "ARI": st.column_config.NumberColumn(help="Согласие разбиений соседних лет: 1 — совпадают, 0 — как случайные")
+    },
+)
 f = go.Figure(
     go.Scatter(
         x=[f"{a}→{b}" for a, b in zip(summ["year_from"], summ["year_to"])],
@@ -152,30 +149,30 @@ f = go.Figure(
         hovertemplate="%{x}: %{y:.0%}<extra></extra>",
     )
 )
-c2.plotly_chart(layout(f, 260, title="Доля МО, сменивших тип", yaxis_tickformat=".0%"), width="stretch")
+c2.plotly_chart(layout(f, 260, title="Доля сменивших тип за год", yaxis_tickformat=".0%"), width="stretch")
 
-st.subheader("Матрица переходов и «мигранты»")
+st.subheader("Кто куда перешёл")
 a, b = st.columns(2)
 y_from = a.selectbox("Из года", years[:-1], index=len(years) - 2)
 y_to = b.selectbox("В год", [y for y in years if y > y_from], index=0)
 s = th.set_index(["year", "territory_id"])["through"]
 common = s.loc[y_from].index.intersection(s.loc[y_to].index)
 mat = pd.crosstab(
-    s.loc[y_from].loc[common].map(clustering.code).rename(f"кластер в {y_from}"),
-    s.loc[y_to].loc[common].map(clustering.code).rename(f"кластер в {y_to}"),
+    s.loc[y_from].loc[common].map(clustering.code).rename(f"тип в {y_from}"),
+    s.loc[y_to].loc[common].map(clustering.code).rename(f"тип в {y_to}"),
 )
 st.dataframe(mat, width="stretch")
 st.caption(
-    f"Строки — кластер в {y_from} г., столбцы — в {y_to} г.; в ячейке — число МО, которые есть в сети в обоих годах "
-    f"({len(common)} МО). Это не размер кластера: он — в таблице «Размер кластеров по годам» выше."
+    f"Строки — тип в {y_from} году, столбцы — в {y_to}. Учтены только муниципалитеты, по которым есть данные "
+    f"за оба года ({len(common)}), поэтому суммы меньше размеров типов."
 )
 m = mo().set_index("territory_id")
 moved = pd.DataFrame({"было": s.loc[y_from].loc[common], "стало": s.loc[y_to].loc[common]})
 moved = moved[moved["было"].ne(moved["стало"])]
 moved = moved.assign(МО=moved.index.map(m["name"]), регион=moved.index.map(m["region_name"]))
-st.markdown(f"Сменили тип с {y_from} по {y_to}: **{len(moved)}** МО из {len(common)}.")
+st.markdown(f"С {y_from} по {y_to} тип сменили **{len(moved)}** муниципалитетов из {len(common)}.")
 
-st.subheader(f"Карта «кто куда перешёл», {y_from} → {y_to}")
+st.subheader(f"Переходы на карте, {y_from}–{y_to}")
 fig = go.Figure()
 stay = [int(i) for i in common if i not in moved.index]
 if stay:
@@ -189,7 +186,7 @@ if stay:
             showscale=False,
             marker_line_width=0.3,
             marker_line_color="white",
-            name=f"не сменили тип ({len(stay)})",
+            name=f"тип не менялся ({len(stay)})",
             showlegend=True,
             text=[m.at[i, "name"] for i in stay],
             hovertemplate="%{text}<br>тип не изменился<extra></extra>",
@@ -221,8 +218,8 @@ st.plotly_chart(geo_layout(fig, set(int(i) for i in common)), width="stretch")
 st.dataframe(moved[["МО", "регион", "было", "стало"]], width="stretch", height=300)
 
 st.caption(
-    f"Всего переходов между соседними годами: {len(mig)}; МО, хотя бы раз сменивших тип: "
-    f"{mig['territory_id'].nunique()} из {th['territory_id'].nunique()}."
+    f"За все годы {len(mig)} переходов; хотя бы раз тип меняли {mig['territory_id'].nunique()} "
+    f"муниципалитетов из {th['territory_id'].nunique()}."
 )
 downloads(
     th.assign(МО=th["territory_id"].map(m["name"])),

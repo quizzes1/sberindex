@@ -1,4 +1,4 @@
-"""Расстояния между МО и сеть на каждый год (этап 4).
+"""Расстояния между МО и сеть на каждый год.
 
 Шаги для года Y:
 1. признаки МО выборки (indicators_wide, только действующие в году МО) → логарифм по реестру →
@@ -279,6 +279,7 @@ def mst_adjacency(D: np.ndarray) -> np.ndarray:
 
 
 def sparsify(D: np.ndarray, W: np.ndarray, sp: dict) -> np.ndarray:
+    """Прореживание полной матрицы весов: kNN, порог веса или kNN + минимальное остовное дерево."""
     method = sp.get("method", "knn_mst")
     if method == "knn":
         return knn_adjacency(D, sp.get("k", 7), sp.get("knn_mode", "symmetric"))
@@ -413,4 +414,5 @@ def save(nets: dict[int, YearNetwork], params: dict) -> str:
 
 
 def load_edges(h: str, year: int) -> pd.DataFrame:
+    """Рёбра сохранённой сети года: source, target, weight, distance."""
     return pd.read_parquet(NETWORKS / h / f"edges_{year}.parquet")

@@ -20,7 +20,6 @@ from common import (
     registry,
     sample_ids,
     sidebar,
-    unit_label,
 )
 
 from src import clustering, convergence
@@ -49,15 +48,9 @@ lo = max(YEARS_MIN, 2017) if var == "gmp_sectoral" else YEARS_MIN
 y0, y1 = c2.slider("Окно", lo, YEARS_MAX, (max(sy0, lo), max(sy1, lo + 1)))
 pr = real_prices(side)
 if var in SERIES or mon.get(var):
-    st.caption(
-        f"Денежные показатели — в ценах {pr['base_year']} г. ({unit_label('gmp_pc' if var in SERIES else var, side, True)}). "
-        "Конвергенция всегда считается в реальных ценах, даже если в боковой панели выбраны текущие."
-    )
+    st.caption(f"Рубли — в ценах {pr['base_year']} года, независимо от настройки цен в боковой панели.")
 if var in SERIES:
-    st.caption(
-        "ВМП — расчётная оценка команды. Для длинного окна берётся базовый метод: склейка базового (до 2016) и "
-        "отраслевого (с 2017) создала бы искусственный скачок."
-    )
+    st.caption("Для длинного периода ВМП считается упрощённым методом: иначе в 2017 году был бы искусственный скачок.")
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -76,8 +69,7 @@ d = d[d["year"].between(y0, y1)]
 ids = sample_ids(side)
 if (y1 - y0 + 1) < cc["min_years_reliable"]:
     st.warning(
-        f"Окно {y0}–{y1} — {y1 - y0 + 1} лет. При окне короче ~9–10 лет выводы о конвергенции ненадёжны: σ-тренд "
-        "опирается на несколько точек, панельная β-оценка смещена (смещение Никелла)."
+        f"Выбрано {y1 - y0 + 1} лет. На периоде короче 9–10 лет выводы о сближении ненадёжны: слишком мало точек."
     )
 
 samples = {"Выборка": d[d["territory_id"].isin(ids)], "Россия": d}
@@ -86,15 +78,16 @@ if types:
     t = pd.Series(types)
     for k in sorted(t.unique()):
         samples[clustering.code(k)] = d[d["territory_id"].isin(set(t.index[t.eq(k)]) & ids)]
-    st.caption("Типы — сквозные типы последнего года со страницы «Динамика».")
+    st.caption("Типы — с последнего года на странице «Динамика».")
 else:
-    st.caption("Чтобы считать конвергенцию по типам, откройте страницу «Динамика» (типы берутся оттуда).")
+    st.caption("Чтобы посмотреть по типам, сначала откройте страницу «Динамика».")
 
 region = mo().set_index("territory_id")["region_code"]
 
 
 @st.cache_data(show_spinner="Считаю…", max_entries=64)
 def compute(var: str, y0: int, y1: int, key: str, ids_tuple: tuple):
+    """σ- и β-конвергенция по выборкам для выбранного показателя и окна."""
     sd = d[d["territory_id"].isin(ids_tuple)]
     st_, tr = convergence.sigma(sd)
     ba = convergence.beta_absolute(sd, y0, y1)
@@ -109,7 +102,7 @@ res = {
     if sd["territory_id"].nunique() >= 5
 }
 
-st.subheader("σ-конвергенция: разброс ln y по МО")
+st.subheader("Сокращается ли разброс")
 fig = go.Figure()
 for i, (name, (st_, *_)) in enumerate(res.items()):
     color = cluster_color(int(name[1:]) - 1) if name[:1] == "K" and name[1:].isdigit() else CATEGORICAL[i]
@@ -126,7 +119,7 @@ for i, (name, (st_, *_)) in enumerate(res.items()):
     )
 st.plotly_chart(layout(fig, 380, yaxis_title="σ(ln y)"), width="stretch")
 
-st.subheader("β-конвергенция: начальный уровень и среднегодовой рост")
+st.subheader("Растут ли отстающие быстрее")
 pick = st.selectbox("Выборка для диаграммы", list(res))
 ba = res[pick][2]
 if np.isfinite(ba.get("b", np.nan)):
@@ -186,8 +179,8 @@ for name, (_st, tr, ba, bp, ps) in res.items():
 tab = pd.DataFrame(rows)
 st.dataframe(tab.style.format({c: "{:.4f}" for c in tab.columns if c not in ("выборка", "МО")}), width="stretch")
 st.caption(
-    "σ: наклон < 0 — разброс сокращается. β < 0 — МО с низким начальным уровнем растут быстрее; λ — скорость "
-    "сближения, полупериод — за сколько лет отставание сокращается вдвое. Панельная β учитывает собственный уровень "
-    "каждого МО (условная конвергенция). log t: t < −1,65 — общей конвергенции нет (возможны клубы)."
+    "σ-наклон меньше нуля — разброс между муниципалитетами сокращается. β меньше нуля — отстающие растут "
+    "быстрее; полупериод — за сколько лет разрыв уменьшается вдвое. log t ниже −1,65 — общего сближения нет, "
+    "но могут быть группы, сближающиеся внутри себя."
 )
 downloads(tab, {"боковая_панель": side, "показатель": var, "окно": [y0, y1]}, "convergence")

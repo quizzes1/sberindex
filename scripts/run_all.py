@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(script: str, *args: str, check: bool = True) -> None:
+    """Запустить шаг конвейера и вывести его длительность."""
     t = time.time()
     print(f"\n=== {script} {' '.join(args)}", flush=True)
     r = subprocess.run([sys.executable, str(ROOT / "scripts" / script), *args], check=check, cwd=ROOT)
@@ -30,6 +31,7 @@ def run(script: str, *args: str, check: bool = True) -> None:
 
 
 def main() -> int:
+    """Точка входа: весь конвейер с нуля одной командой."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--skip-download", action="store_true")
     ap.add_argument("--quick", action="store_true")

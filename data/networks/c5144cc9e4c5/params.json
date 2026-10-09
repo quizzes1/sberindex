@@ -1,0 +1,53 @@
+{
+  "edge_weight": "gaussian",
+  "features": {
+    "budget_own_share": 1.0,
+    "gmp_pc": 1.0,
+    "invest_pc_nobudget": 1.0,
+    "shipped_pc": 1.0,
+    "wage": 1.0
+  },
+  "geo": {
+    "alpha": 1.0,
+    "no_road": "line",
+    "weights": {
+      "adjacency": 0.0,
+      "line_km": 0.0,
+      "rail_km": 0.0,
+      "road_km": 1.0
+    }
+  },
+  "metric": "euclidean",
+  "missing": "drop",
+  "preprocess": {
+    "log": "registry",
+    "method": "minmax",
+    "scope": "panel",
+    "winsor": null
+  },
+  "prices": {
+    "base_year": 2020,
+    "deflator_scope": "national",
+    "spatial_price_adjustment": true,
+    "values": "real"
+  },
+  "sample": {
+    "exclude_boundary_change": true,
+    "federal_districts": [
+      "ДФО"
+    ],
+    "regions": [],
+    "years": [
+      2014,
+      2024
+    ]
+  },
+  "seed": 42,
+  "sparsify": {
+    "k": 5,
+    "knn_mode": "symmetric",
+    "method": "knn_mst",
+    "threshold": 0.5
+  },
+  "structural_missing": 0.5
+}

@@ -64,12 +64,9 @@ with st.expander("Описание выбранных показателей", e
     t["unit"] = [unit_label(c, side) for c in sel]
     st.dataframe(t, width="stretch")
 if "gmp_pc" in sel:
-    st.caption(
-        "ВМП — расчётная оценка команды (не официальная статистика). Для 2013–2016 гг. — базовый метод "
-        "(колонка gmp_method_used), с 2017 г. — отраслевой."
-    )
+    st.caption("ВМП — наша оценка. До 2017 года он считается упрощённым методом, с 2017 — по отраслям.")
 
-st.subheader("Распределения: исходные значения и после нормировки")
+st.subheader("Распределение значений")
 logc = [c for c in sel if bool(reg.at[c, "log"])]
 X = rows.set_index(["territory_id", "year"])[sel]
 Z = prepare(X, sel, log_columns=logc, method=side["method"], scope=side["scope"])
@@ -101,7 +98,7 @@ b.plotly_chart(
     width="stretch",
 )
 
-st.subheader("Корреляции (ρ Спирмена) и разброс")
+st.subheader("Связь между показателями")
 corr = X.corr(method="spearman")
 lab = [reg.at[c, "name"][:40] for c in sel]
 fc = go.Figure(
@@ -127,8 +124,8 @@ strong = [
 ]
 if strong:
     st.warning(
-        "Сильно связанные пары (|ρ| ≥ 0,8) — кандидаты на исключение дублей: "
-        + "; ".join(f"{reg.at[x, 'name']} — {reg.at[y, 'name']} ({r:.2f})" for x, y, r in strong)
+        "Эти показатели почти дублируют друг друга, достаточно оставить один из пары: "
+        + "; ".join(f"{reg.at[x, 'name']} и {reg.at[y, 'name']} ({r:.2f})" for x, y, r in strong)
     )
 var = (
     Z.var()
@@ -140,7 +137,7 @@ var = (
 var.index = [reg.at[c, "name"] for c in var.index]
 st.dataframe(var.style.format("{:.3f}"), width="stretch")
 
-st.subheader("Картограмма")
+st.subheader("Карта")
 y0, y1 = side["years"]
 yr = st.select_slider("Год", list(range(y0, y1 + 1)), value=y1)
 v = rows[rows["year"].eq(yr)].set_index("territory_id")[ind]

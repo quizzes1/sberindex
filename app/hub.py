@@ -47,6 +47,7 @@ REPORT_SECTIONS = {
 
 
 def n_pages(name: str) -> int:
+    """Число отрисованных страниц документа (файлы NN.jpg)."""
     return len([p for p in (DOCS / name).glob("[0-9][0-9].jpg")])
 
 
@@ -79,6 +80,7 @@ st.markdown(
 .hub-btn.primary:hover {{ background: #1c8c31; }}
 .hub-btn.ghost {{ background: rgba(255,255,255,.10); color: #fff !important; border: 1px solid rgba(255,255,255,.28); }}
 .hub-btn.ghost:hover {{ background: rgba(255,255,255,.18); }}
+.hub-card {{ min-height: 146px; }}
 .hub-card-title {{ font-size: 1.15rem; font-weight: 700; margin-bottom: .15rem; }}
 .hub-card-sub {{ opacity: .7; font-size: .9rem; margin-bottom: .6rem; }}
 .hub-links {{ display: flex; flex-wrap: wrap; gap: 8px; }}
@@ -87,9 +89,15 @@ st.markdown(
   font-weight: 600; text-decoration: none !important; border: 1px solid rgba(33,160,56,.55); color: #21a038 !important;
 }}
 .hub-links a:hover {{ background: rgba(33,160,56,.12); }}
-.hub-stat {{ font-size: 2rem; font-weight: 800; color: #21a038; line-height: 1.1; white-space: nowrap; }}
-.hub-stat.small {{ font-size: 1.45rem; padding-top: .35rem; }}
-.hub-stat-l {{ opacity: .72; font-size: .88rem; }}
+.hub-stats {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin: 22px 0 18px; }}
+.hub-stat-box {{ display: flex; flex-direction: column; }}
+.hub-stat {{
+  font-size: 2rem; font-weight: 800; color: #21a038; line-height: 1; white-space: nowrap;
+  height: 2.6rem; display: flex; align-items: flex-end;
+}}
+.hub-stat.small {{ font-size: 1.5rem; }}
+.hub-stat-l {{ opacity: .72; font-size: .88rem; margin-top: .4rem; }}
+@media (max-width: 900px) {{ .hub-stats {{ grid-template-columns: repeat(2, 1fr); }} }}
 .hub-thumb img {{ border-radius: 8px; }}
 .hub-page {{ width: 100%; border-radius: 10px; box-shadow: 0 4px 24px rgba(0,0,0,.18); }}
 </style>
@@ -97,13 +105,12 @@ st.markdown(
   <div class="kicker">СберИндекс · конкурс 2026 · трек «Кластеризация»</div>
   <h1>Кластерный анализ муниципалитетов<br>на территории России</h1>
   <div class="years">2014–2024 · ~2 600 муниципальных образований</div>
-  <div class="team">Команда СПбПУ Петра Великого:
-    <b>Путинцев Павел</b> — разработчик · <b>Панов Александр</b>, <b>Напрюшкин Иван</b>,
-    <b>Быков Дмитрий</b> — аналитики</div>
+  <div class="team">Команда Политеха Петра Великого: разработчик <b>Павел Путинцев</b>,
+    аналитики <b>Александр Панов</b>, <b>Иван Напрюшкин</b> и <b>Дмитрий Быков</b></div>
   <div class="hub-btns">
-    <a class="hub-btn primary" href="#presentation-view">▶ Смотреть презентацию</a>
-    <a class="hub-btn ghost" href="#report-view">📄 Читать отчёт</a>
-    <a class="hub-btn ghost" href="{GITHUB}" target="_blank" rel="noopener">⌥ Репозиторий на GitHub</a>
+    <a class="hub-btn primary" href="#presentation-view">Смотреть презентацию</a>
+    <a class="hub-btn ghost" href="#report-view">Читать отчёт</a>
+    <a class="hub-btn ghost" href="{GITHUB}" target="_blank" rel="noopener">Код на GitHub</a>
   </div>
 </div>
 """,
@@ -115,7 +122,7 @@ c1, c2, c3 = st.columns(3, gap="medium")
 cards = [
     (
         c1,
-        "🎞️ Презентация",
+        "Презентация",
         f"{N_SLIDES} слайдов · PDF, {(DOCS / 'presentation.pdf').stat().st_size / 2**20:.1f} МБ",
         "presentation.pdf",
         "СберИндекс_кластерный_анализ_презентация.pdf",
@@ -123,7 +130,7 @@ cards = [
     ),
     (
         c2,
-        "📘 Методологический отчёт",
+        "Методологический отчёт",
         f"{N_PAGES} страниц · PDF, {(DOCS / 'report.pdf').stat().st_size / 2**20:.1f} МБ",
         "report.pdf",
         "СберИндекс_методологический_отчёт.pdf",
@@ -133,47 +140,54 @@ cards = [
 for col, title, sub, fname, dl_name, anchor in cards:
     with col.container(border=True):
         st.markdown(
-            f"""<div class="hub-card-title">{title}</div><div class="hub-card-sub">{sub}</div>
+            f"""<div class="hub-card"><div class="hub-card-title">{title}</div><div class="hub-card-sub">{sub}</div>
 <div class="hub-links"><a href="{anchor}">Смотреть на сайте</a>
 <a href="{URL}/{fname}" download="{dl_name}">Скачать PDF</a>
-<a href="{URL}/{fname}" target="_blank" rel="noopener">Открыть в браузере</a></div>""",
+<a href="{URL}/{fname}" target="_blank" rel="noopener">Открыть в браузере</a></div></div>""",
             unsafe_allow_html=True,
         )
 with c3.container(border=True):
     st.markdown(
-        f"""<div class="hub-card-title">💻 Код и данные</div>
-<div class="hub-card-sub">Репозиторий: конвейер данных, методы, интерфейс, инструкция по запуску</div>
+        f"""<div class="hub-card"><div class="hub-card-title">Код и данные</div>
+<div class="hub-card-sub">Расчёты, интерфейс и инструкция по запуску</div>
 <div class="hub-links"><a href="{GITHUB}" target="_blank" rel="noopener">GitHub</a>
 <a href="{GITHUB}#readme" target="_blank" rel="noopener">Как запустить</a>
-<a href="{GITHUB}/blob/main/reports/METHODS.md" target="_blank" rel="noopener">Методика</a></div>""",
+<a href="{GITHUB}/blob/main/reports/METHODS.md" target="_blank" rel="noopener">Методика</a></div></div>""",
         unsafe_allow_html=True,
     )
 
 # ---------------------------------------------------------------- ключевые цифры
-st.write("")
-s1, s2, s3, s4, s5 = st.columns(5)
-for col, val, lab in (
-    (s1, "~2 600", "муниципальных образований"),
-    (s2, "2014–2024", "11 лет наблюдений"),
-    (s3, "5", "признаков экономики МО"),
-    (s4, "5", "типов локальных экономик"),
-    (s5, "Уорд + k-means", "метод кластеризации"),
-):
-    cls = "hub-stat small" if len(val) > 10 else "hub-stat"
-    col.markdown(f'<div class="{cls}">{val}</div><div class="hub-stat-l">{lab}</div>', unsafe_allow_html=True)
+stats = [
+    ("~2 600", "муниципальных образований"),
+    ("2014–2024", "11 лет наблюдений"),
+    ("5", "показателей экономики"),
+    ("5", "типов муниципалитетов"),
+    ("Уорд + k-means", "метод кластеризации"),
+]
+st.markdown(
+    '<div class="hub-stats">'
+    + "".join(
+        f'<div class="hub-stat-box"><div class="hub-stat{" small" if len(v) > 10 else ""}">{v}</div>'
+        f'<div class="hub-stat-l">{lab}</div></div>'
+        for v, lab in stats
+    )
+    + "</div>",
+    unsafe_allow_html=True,
+)
 
-st.write("")
 links = [
-    ("overview.py", "Обзор и сводные таблицы", ":material/dashboard:"),
+    ("overview.py", "Обзор", ":material/dashboard:"),
     ("pages/4_Кластеры.py", "Кластеры", ":material/scatter_plot:"),
     ("pages/5_Динамика.py", "Динамика", ":material/timeline:"),
     ("pages/7_Сводные_таблицы.py", "Сводные таблицы", ":material/table_chart:"),
 ]
-for col, (page, label, icon) in zip(st.columns(len(links)), links):
-    try:
-        col.page_link(page, label=label, icon=icon)
-    except StreamlitPageNotFoundError:  # страница открыта напрямую, без меню Home.py
-        pass
+with st.container(border=True):
+    st.markdown('<div class="hub-card-title">Перейти к анализу</div>', unsafe_allow_html=True)
+    for col, (page, label, icon) in zip(st.columns(len(links)), links):
+        try:
+            col.page_link(page, label=label, icon=icon, use_container_width=True)
+        except StreamlitPageNotFoundError:  # страница открыта напрямую, без меню Home.py
+            pass
 
 st.divider()
 
@@ -199,7 +213,7 @@ def pager(key: str, total: int, sections: dict[str, int]) -> int:
 
 
 st.markdown('<div id="presentation-view"></div>', unsafe_allow_html=True)
-st.subheader("🎞️ Презентация")
+st.subheader("Презентация")
 slide = pager("hub_slide", N_SLIDES, PRESENTATION_SECTIONS)
 st.markdown(
     f'<img class="hub-page" src="{URL}/presentation/{slide:02d}.jpg?v={VER}" alt="Слайд {slide}">',
@@ -226,7 +240,7 @@ with st.expander("Все слайды", expanded=False):
 
 st.divider()
 st.markdown('<div id="report-view"></div>', unsafe_allow_html=True)
-st.subheader("📘 Методологический отчёт")
+st.subheader("Методологический отчёт")
 mode = st.segmented_control(
     "Вид",
     ["По страницам", "Весь документ"],
@@ -252,6 +266,5 @@ with mid:
         st.caption(f"Страница {page} из {N_PAGES}")
 
 st.caption(
-    "Документы на этой странице — итоговые материалы команды на момент сдачи. Цифры в интерфейсе (страницы «Анализ») "
-    "пересчитываются при обновлении данных и выбранных настройках."
+    "Отчёт и презентация — версия на дату сдачи. Цифры на страницах анализа пересчитываются при обновлении данных."
 )

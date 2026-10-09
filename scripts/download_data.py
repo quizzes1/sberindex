@@ -1,4 +1,4 @@
-"""Скачивает все исходные данные в data/raw/ (этап 1).
+"""Скачивает все исходные данные в data/raw/.
 
 Запуск:  python scripts/download_data.py [--with-optional] [--only sber,rosstat,...] [--verify]
 
@@ -28,6 +28,7 @@ FAILED = RAW / "FAILED.txt"
 
 
 def read_sums() -> dict[str, str]:
+    """Контрольные суммы SHA-256 скачанных файлов (data/raw/SHA256SUMS)."""
     if not SUMS.exists():
         return {}
     out = {}
@@ -39,6 +40,7 @@ def read_sums() -> dict[str, str]:
 
 
 def write_sums(sums: dict[str, str]) -> None:
+    """Записать контрольные суммы SHA-256 скачанных файлов."""
     SUMS.write_text("".join(f"{h}  {p}\n" for p, h in sorted(sums.items())), encoding="utf-8")
 
 
@@ -113,6 +115,7 @@ def unpack(path: Path) -> None:
 
 
 def main() -> int:
+    """Точка входа: скачивает все исходные данные в data/raw/."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--with-optional", action="store_true", help="качать и опциональные (большие) показатели")
     ap.add_argument("--only", default="", help="группы через запятую: sber,rosstat,tochno_regions,tochno_bdmo")

@@ -16,3 +16,15 @@ toolbarMode = "minimal"
 
 [runner]
 fastReruns = true
+
+# Шрифт Onest (открытая лицензия SIL OFL 1.1, app/static/fonts/OFL.txt) — раздаётся с нашего сервера,
+# поэтому не зависит от доступности внешних сервисов шрифтов
+[theme]
+font = "Onest, sans-serif"
+headingFont = "Onest, sans-serif"
+
+[[theme.fontFaces]]
+family = "Onest"
+url = "app/static/fonts/Onest-Variable.ttf"
+weight = "100 900"
+style = "normal"

@@ -1,4 +1,4 @@
-"""Расчёт валового муниципального продукта (этап 3, раздел 6.1).
+"""Расчёт валового муниципального продукта.
 
 Запуск:  python scripts/build_gmp.py
 
@@ -31,10 +31,12 @@ OUT: list[str] = []
 
 
 def w(s: str = "") -> None:
+    """Добавить строку в текст отчёта."""
     OUT.append(s)
 
 
 def md(df: pd.DataFrame, fmt: str = "{:,.2f}") -> str:
+    """Таблица pandas → таблица Markdown для отчёта."""
     cols = [str(c) for c in df.columns]
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
     for r in df.itertuples(index=False):
@@ -44,6 +46,7 @@ def md(df: pd.DataFrame, fmt: str = "{:,.2f}") -> str:
 
 
 def params(cfg: dict, variant: dict | None = None) -> dict:
+    """Параметры распределения ВМП по отраслям из configs/gmp.yaml (с учётом варианта)."""
     p = {**cfg["sectoral"], "imputation_weight": cfg["imputation_weight"]}
     p["by_section"] = dict(p["by_section"])
     if variant:
@@ -54,6 +57,7 @@ def params(cfg: dict, variant: dict | None = None) -> dict:
 
 
 def per_capita(d: pd.DataFrame, pop: pd.Series, mo: pd.DataFrame) -> pd.DataFrame:
+    """ВМП на жителя и доля ВМП, распределённая по правилу для скрытых данных."""
     d = d.merge(mo[["territory_id", "region_code"]], on="territory_id", how="left", suffixes=("", "_mo"))
     d["region_code"] = d["region_code"].fillna(d.get("region_code_mo"))
     d["pop"] = d.set_index(["territory_id", "year"]).index.map(pop)
@@ -103,6 +107,7 @@ def vgp_table(mo: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> int:
+    """Точка входа: расчёт валового муниципального продукта."""
     cfg = load_yaml("gmp.yaml")
     cfg_panel = load_yaml("panel.yaml")
     wide = pd.read_parquet(PROCESSED / "panel_wide.parquet")

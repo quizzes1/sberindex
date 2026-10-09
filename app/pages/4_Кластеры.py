@@ -26,6 +26,7 @@ from common import (
     mo,
     network_params,
     partition_badge,
+    plural,
     registry,
     save_names,
     sidebar,
@@ -33,7 +34,7 @@ from common import (
     unit_label,
 )
 
-from src import clustering, icvi, network
+from src import clustering, icvi, network, summary
 
 st.set_page_config(page_title="Кластеры", layout="wide")
 side = sidebar()
@@ -45,6 +46,7 @@ avail = {m: clustering.available(m) for m in cc["methods"]}
 
 @st.cache_resource(show_spinner="Строю сеть…", max_entries=2)  # сеть всей России — ~150 МБ; общая, без копий
 def net_year(params_json: str, year: int):
+    """Сеть года (общий кэш): узлы, признаки, веса рёбер разреженной сети и список рёбер."""
     net = network.build(json.loads(params_json), years=[year])[year]
     return net.ids, net.X, net.W * net.A, net.edges()
 
@@ -78,6 +80,7 @@ def run(params_json: str, year: int, method: str, k: int, mode: str = "per_year"
 
 @st.cache_data(show_spinner="Строю дерево Уорда…", max_entries=8)
 def ward_tree(params_json: str, year: int, mode: str):
+    """Дерево Уорда для дендрограммы: по сети года или по всей панели (режим pooled)."""
     if mode == "pooled":
         X = panel_features(params_json).dropna(axis=1, how="all").dropna().to_numpy()
     else:
@@ -92,9 +95,11 @@ if "features" in override:
     params["features"] = override["features"]
 pj = json.dumps(params, sort_keys=True, ensure_ascii=False)
 h = network.config_hash(params)
+reg_names = registry().set_index("code")["name"]
 st.caption(
-    f"Сеть: признаки {list(params['features'])}, α = {params['geo']['alpha']}, хэш `{h}` "
-    f"({'настроена на странице «Сеть»' if override else 'параметры по умолчанию — configs/network.yaml'})."
+    "Показатели: "
+    + ", ".join(summary.short_name(reg_names.get(f, f)) for f in params["features"])
+    + (". Настроено на странице «Сеть»." if override else ".")
 )
 
 c0, c1, c2, c3 = st.columns([1.2, 1.2, 1, 1])
@@ -105,17 +110,17 @@ if mode == "pooled":
 year = cluster_year(c3, side)
 missing = [f"{m}: {w}" for m, (ok, w) in avail.items() if not ok]
 if missing:
-    st.caption("Недоступны: " + "; ".join(missing))
+    st.caption("Недоступны на этом сервере: " + ", ".join(m.split(":")[0] for m in missing))
 if k > len(CATEGORICAL):
     st.caption(
-        f"Кластеры с 9-го окрашены нейтральным серым: различимых цветов не больше {len(CATEGORICAL)} — "
-        "ориентируйтесь на подсказки и таблицу."
+        f"Различимых цветов только {len(CATEGORICAL)}, поэтому типы начиная с девятого — серые. "
+        "Смотрите подсказки и таблицу."
     )
 
 if method in ("kefrin", "canus") and len(net_year(pj, year)[0]) > 1000:
     st.info(
-        f"{METHOD_NAMES[method]} на {len(net_year(pj, year)[0])} МО считается долго (KEFRiN — около 20 с на разбиение, "
-        "CANUS — минуты). Результат запоминается: повторный просмотр того же года и k — мгновенно."
+        f"{METHOD_NAMES[method]} на всей России считается долго: KEFRiN — около 20 секунд, CANUS — минуты. "
+        "Потом результат запоминается."
     )
 labels, scores = run(pj, year, method, k, mode)
 ids, X, Wsp, edges = net_year(pj, year)
@@ -127,15 +132,13 @@ disp = {
 }
 st.caption(
     partition_badge(h, mode, method, k)
-    + f" · {year} г. — размеры кластеров: "
+    + f" В {year} году: "
     + ", ".join(f"{clustering.code(c)} — {n}" for c, n in labels.value_counts().sort_index().items())
-    + " МО (те же числа — в таблице «Размер кластеров по годам» на странице «Динамика»). Номера K1…Kn — по медиане "
-    "ВМП на душу в ценах базового года, по убыванию."
-    + (" Режим pooled: номера одинаковы во всех годах." if mode == "pooled" else "")
+    + ". K1 — самый высокий ВМП на душу."
 )
 
 if method in ("ward", "ward_kmeans"):
-    with st.expander("Дендрограмма Уорда и выбор k по скачку расстояния слияния", expanded=method == "ward_kmeans"):
+    with st.expander("Дерево Уорда: сколько типов выделить", expanded=method == "ward_kmeans"):
         from scipy.cluster.hierarchy import dendrogram
 
         Z, n_all, n_tree = ward_tree(pj, year, mode)
@@ -164,23 +167,19 @@ if method in ("ward", "ward_kmeans"):
             hide_index=True,
         )
         st.caption(
-            f"Подписи внизу — число {'МО-лет' if mode == 'pooled' else 'МО'} в ветви (в скобках). "
-            f"Наибольший относительный скачок высоты слияния — естественная граница: по нему k = {best} "
-            "(k = 2 не рассматривается — последнее слияние всегда самое высокое). Сравните с индексами качества ниже."
-            + (
-                f" Дерево построено по случайной подвыборке {n_tree} из {n_all} строк (память растёт как n²)."
-                if n_tree < n_all
-                else ""
-            )
+            "Чем выше точка слияния, тем сильнее отличаются объединяемые группы. Где высота резко прыгает, там "
+            f"естественная граница — сейчас это {plural(best, 'тип', 'типа', 'типов')} (два не считаем: последнее "
+            "слияние всегда самое высокое)."
+            + (f" Дерево построено по случайным {n_tree} строкам из {n_all}." if n_tree < n_all else "")
         )
 
-t1, t2, t3 = st.tabs(["Карта", "Граф на карте", "Силовая раскладка"])
+t1, t2, t3 = st.tabs(["Карта", "Связи на карте", "Сеть"])
 with t1:
-    st.plotly_chart(cluster_map(labels, disp, f"{METHOD_NAMES[method]}, k = {k}, {year} г."), width="stretch")
+    st.plotly_chart(cluster_map(labels, disp, f"Типы муниципалитетов, {year}"), width="stretch")
 with t2:
-    st.plotly_chart(graph_on_map(edges, labels, f"Сеть {year} г., цвет — кластер"), width="stretch")
+    st.plotly_chart(graph_on_map(edges, labels, f"Связи между похожими муниципалитетами, {year}"), width="stretch")
 with t3:
-    force_tab(edges, labels, title=f"Сеть {year} г., цвет — кластер", key="force_cl")
+    force_tab(edges, labels, title=f"Сеть похожих муниципалитетов, {year}", key="force_cl")
 
 st.subheader("Индексы качества")
 order = ["K", "SW", "CH", "DBI", "S_Dbw", "AVI", "AVU", "ANUI", "MQ"]
@@ -190,11 +189,11 @@ st.dataframe(
     width="stretch",
 )
 st.caption(
-    "↑ — больше лучше, ↓ — меньше лучше. SW, CH, DBI, S_Dbw — по нормированным признакам; AVI, AVU, ANUI, MQ — "
-    "по весам рёбер сети. Формулы — reports/METHODS.md, раздел 7."
+    "Стрелка показывает, какое значение лучше. Первые четыре индекса оценивают разбиение по показателям, остальные — "
+    "по связям в сети. Формулы — в reports/METHODS.md."
 )
 
-st.subheader("Паспорта типов")
+st.subheader("Профили типов")
 reg = registry().set_index("code")
 feats = [f for f in params["features"] if f in X.columns]  # в 2014–2016 гг. специализации (hhi_emp) нет
 w = indicators_wide()
@@ -227,12 +226,11 @@ prof_r.index = [disp[int(c)] for c in prof_r.index]
 prof_r.columns = [reg.at[c, "name"] if c in reg.index else c for c in prof_r.columns]
 st.dataframe(prof_r, width="stretch")
 st.caption(
-    f"Медианы исходных значений; ВМП на душу — {unit_label('gmp_pc', side)}, остальные денежные — так же "
-    "(ВМП — расчётная оценка команды; gmp_imputed_share — доля ВМП, распределённая по "
-    "правилу для скрытых данных)."
+    f"Медианы по типу, рубли — {unit_label('gmp_pc', side).removeprefix('руб.').strip(', ') or 'в текущих ценах'}. "
+    "Доля ВМП по правилу для скрытых данных — чем она выше, тем грубее оценка ВМП."
 )
 
-with st.expander("Названия типов (сохраняются в data/cluster_names.yaml)"):
+with st.expander("Дать типам названия"):
     with st.form("names"):
         new = {
             int(c): st.text_input(
@@ -257,13 +255,13 @@ comp = pd.DataFrame(rows)[["метод", *order]] if rows else pd.DataFrame()
 if len(comp):
     st.dataframe(comp.style.format({c: "{:.3f}" for c in order}), width="stretch")
 
-st.subheader(f"Выбор числа кластеров: {METHOD_NAMES[method]}, {year} г.")
+st.subheader(f"Сколько типов выделить, {year}")
 slow = method in ("kefrin", "canus") and len(ids) > 1000
 if method == "canus":
-    st.caption("CANUS медленный (30–120 с на разбиение): перебор k может занять несколько минут.")
+    st.caption("CANUS медленный: перебор займёт несколько минут.")
 if slow and not st.session_state.get(f"ktable_{method}_{year}_{len(ids)}"):
-    st.caption(f"{METHOD_NAMES[method]} на {len(ids)} МО считается долго (минуты на перебор k = 2…10).")
-    if st.button("Посчитать перебор k"):
+    st.caption(f"{METHOD_NAMES[method]} на {len(ids)} муниципалитетах считается несколько минут.")
+    if st.button("Посчитать для 2–10 типов"):
         st.session_state[f"ktable_{method}_{year}_{len(ids)}"] = True
         st.rerun()
 else:
@@ -308,14 +306,13 @@ else:
             )
         el, er = st.columns([2, 1])
         el.plotly_chart(
-            layout(fe, 300, title="Метод локтя: внутрикластерная сумма квадратов (WCSS) ↓", xaxis_title="k"),
+            layout(fe, 300, title="Метод локтя", xaxis_title="число типов", yaxis_title="разброс внутри типов"),
             width="stretch",
         )
         er.markdown(
             f"**Локоть: k = {k_el if k_el is not None else '—'}.**\n\n"
-            "WCSS — сумма квадратов расстояний МО до центра своего кластера по нормированным признакам. С ростом k она "
-            "всегда падает; «локоть» — k, после которого падение резко замедляется (точка кривой, наиболее удалённая от "
-            "пунктирной прямой между крайними точками). Сравните с индексами ниже: окончательный выбор — за вами."
+            "Чем больше типов, тем меньше разброс внутри каждого. Локоть — место, после которого разброс почти "
+            "перестаёт падать: дальше типы дробятся без пользы. Сверьте с индексами ниже."
         )
     cols = st.columns(4)
     for i, ind in enumerate(["SW", "CH", "S_Dbw", "AVI", "AVU", "ANUI", "MQ", "DBI"]):
@@ -331,8 +328,8 @@ else:
         )
         cols[i % 4].plotly_chart(layout(f, 220, title=f"{ind} {arrows[ind]}"), width="stretch")
 st.caption(
-    "S_Dbw на этих данных обычно монотонно убывает с ростом k и выбирает почти максимальное k (9–10) — сам по себе для выбора k "
-    "он не годится. Сводная таблица по всем годам и методам — reports/CLUSTERS.md."
+    "S_Dbw здесь почти всегда падает с ростом числа типов, поэтому для выбора k одного его мало. "
+    "Таблица по всем годам и методам — reports/CLUSTERS.md."
 )
 
 table = pd.DataFrame(

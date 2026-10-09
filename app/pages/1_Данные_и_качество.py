@@ -23,7 +23,7 @@ base = reg[~reg["code"].str.contains(r"^emp_share_|^lq_|^gmp_structure_|^spend_s
 codes = [c for c in base["code"] if c in d]
 names = reg.set_index("code")["name"]
 
-st.subheader("Покрытие: доля МО выборки с данными, % (показатель × год)")
+st.subheader("Полнота данных по годам")
 cov = (d.groupby("year")[codes].apply(lambda x: x.notna().mean() * 100)).T
 fig = go.Figure(
     go.Heatmap(
@@ -39,7 +39,7 @@ fig = go.Figure(
 )
 st.plotly_chart(layout(fig, 26 * len(codes) + 80), width="stretch")
 
-st.subheader("Покрытие по субъектам")
+st.subheader("Полнота данных по субъектам")
 c1, c2 = st.columns(2)
 ind = c1.selectbox("Показатель", codes, format_func=lambda c: f"{names.get(c, c)} ({c})")
 yr = c2.selectbox("Год", list(range(y1, y0 - 1, -1)))
@@ -57,7 +57,7 @@ fig = go.Figure(
 )
 st.plotly_chart(layout(fig, 20 * len(byreg) + 80, xaxis_title="% МО с данными"), width="stretch")
 
-st.subheader("Покрытие: показатель × субъект, % МО с данными за окно")
+st.subheader("Все показатели по субъектам")
 reg_cov = (
     d.assign(region=d["territory_id"].map(m["region_name"]))
     .groupby("region")[codes]
@@ -80,22 +80,22 @@ fig = go.Figure(
 fig.update_xaxes(tickangle=-60, tickfont=dict(size=9))
 st.plotly_chart(layout(fig, 26 * len(codes) + 220), width="stretch")
 st.caption(
-    f"Субъекты упорядочены по федеральным округам; окно {y0}–{y1}, только МО выборки, действующие в году. Пропуск ≠ "
-    "ноль: скрытые Росстатом значения не заполняются. Полный разбор — reports/DATA_GAPS.md."
+    f"Доля муниципалитетов с данными за {y0}–{y1}, субъекты сгруппированы по округам. Пропуск — это "
+    "скрытое или неопубликованное значение, мы его не заполняем. Подробно — reports/DATA_GAPS.md."
 )
 
-st.subheader("Сверка с признаками научной работы-образца")
+st.subheader("Сравнение с показателями работы-образца")
 sc_path = PROCESSED / "sample_comparison.csv"
 if sc_path.exists():
     st.dataframe(pd.read_csv(sc_path), width="stretch", hide_index=True)
     st.caption(
-        "Проверено по перечню 603 показателей БДПМО (tochno.st) и архиву хакатона СберИндекса. Чего нет на уровне МО — "
-        "так и указано; замены — только из тех же источников. Покрытие — по всей России, 2017–2024."
+        "Что из показателей образца есть по муниципалитетам и чем заменено то, чего нет. Проверено по всем "
+        "603 показателям муниципальной статистики Росстата и данным СберИндекса."
     )
 else:
-    st.caption("Нет файла сверки — запустите scripts/build_data_gaps.py.")
+    st.caption("Таблицы сравнения пока нет: её строит scripts/build_data_gaps.py.")
 
-st.subheader("МО с пропусками")
+st.subheader("Муниципалитеты с пропусками")
 sel = st.multiselect(
     "Показатели для проверки",
     codes,
@@ -109,17 +109,13 @@ gaps = gaps.assign(
     пропущено=gaps[sel].isna().apply(lambda r: ", ".join(r.index[r]), axis=1) if sel else "",
 )
 st.dataframe(gaps[["МО", "регион", "year", "пропущено"]], width="stretch", height=300)
-st.caption(
-    "Пропуск — это отсутствие данных у Росстата (часто — скрытые малые значения), а не ноль. "
-    "Нули вместо пропусков не подставляются."
-)
+st.caption("Пропуск значит, что Росстат значение не опубликовал (часто скрыл малое). Нулями мы их не заменяем.")
 
-st.subheader("Непривязанные строки источников")
+st.subheader("Строки, которые не удалось сопоставить")
 u = pd.read_csv(PROCESSED / "unmatched.csv")
 st.dataframe(u, width="stretch", height=240)
 st.caption(
-    "Строки БДПМО, которые не удалось привязать к МО справочника СберИндекса (причина — в колонке match). "
-    "Подробнее — reports/DATA.md, раздел 2."
+    "Записи Росстата, для которых не нашлось муниципалитета в справочнике СберИндекса. Причина — в колонке match."
 )
 
 st.subheader("Источники")
@@ -143,18 +139,16 @@ for it in b["indicators"]:
     rows.append({"источник": f"БДПМО {it['code']}", "файл": f.name, "найден": f.exists(), "назначение": it["role"]})
 st.dataframe(pd.DataFrame(rows), width="stretch", height=300)
 st.markdown(
-    "- **Не найдено в данных:** время в пути между МО (в данных СберИндекса только километры); "
-    "доходы местных бюджетов после 2020 г.; занятость и оборот малого бизнеса по МО за всё окно.\n"
-    f"- Неудачных загрузок: {len(failed.splitlines()) if failed else 0}."
+    "Чего в данных нет: времени в пути между муниципалитетами (только километры), доходов местных бюджетов "
+    f"после 2020 года и данных о малом бизнесе за все годы. Неудачных загрузок: {len(failed.splitlines()) if failed else 0}."
 )
 
-st.subheader("Индексы цен и дефляторы")
+st.subheader("Индексы цен")
 pr = side["prices"]
 st.markdown(
-    f"Денежные показатели хранятся в текущих ценах и пересчитываются в цены **{pr['base_year']} г.**: "
-    "real_t = nominal_t × L_base / L_t (`src/prices.py`). Дефлятор показателя — поле `deflator` реестра: "
-    "ИПЦ — зарплата, ФОТ, доходы бюджета, розница; дефлятор ВРП — ВМП; индекс цен инвестиционной продукции — "
-    "инвестиции; индексы цен производителей — отгрузка (промышленность, обрабатывающие), продукция сельского хозяйства."
+    f"Денежные показатели переводятся в цены {pr['base_year']} года. Для зарплат, ФОТ, бюджета и розницы "
+    "берём потребительские цены, для ВМП — дефлятор ВРП, для инвестиций — цены инвестиционной продукции, для "
+    "отгрузки и сельского хозяйства — цены производителей."
 )
 lv = prices.levels()
 ru = lv[lv["region_code"].eq(prices.RUSSIA)].pivot(index="year", columns="deflator", values="level")

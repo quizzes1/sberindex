@@ -1,4 +1,4 @@
-"""Расчёт показателей из реестра (этап 3, раздел 6.2).
+"""Расчёт показателей из реестра.
 
 Запуск:  python scripts/build_indicators.py
 
@@ -35,6 +35,7 @@ CORE_YEARS = (2017, 2024)
 
 
 def md(df: pd.DataFrame, fmt: str = "{:.2f}") -> str:
+    """Таблица pandas → таблица Markdown для отчёта."""
     cols = [str(c) for c in df.columns]
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
     for r in df.itertuples(index=False):
@@ -47,6 +48,7 @@ def md(df: pd.DataFrame, fmt: str = "{:.2f}") -> str:
 
 
 def main() -> int:
+    """Точка входа: расчёт показателей из реестра."""
     prices.save()
     ctx = ind.Context.load()
     vals = ind.compute_all(ctx)
@@ -102,7 +104,7 @@ def main() -> int:
 
     names = reg.set_index("code")["name"]
     out = [
-        "# Показатели (этап 3)",
+        "# Показатели",
         "",
         "Сгенерировано `scripts/build_indicators.py`. Реестр — `configs/indicators.yaml`, "
         "формулы — `src/indicators.py`, раскрытый реестр для интерфейса — `data/processed/indicator_registry.parquet`.",

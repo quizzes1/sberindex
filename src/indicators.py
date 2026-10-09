@@ -1,4 +1,4 @@
-"""Расчёт показателей из реестра configs/indicators.yaml (этап 3).
+"""Расчёт показателей из реестра configs/indicators.yaml.
 
 Каждый показатель — функция с именем его кода: f(ctx) -> Series (индекс territory_id, year) или
 DataFrame (отраслевые показатели: колонки <код>_<раздел>). Добавить показатель = запись в YAML +
@@ -24,6 +24,7 @@ def registry() -> list[dict]:
 
 
 def registry_params() -> dict:
+    """Общие параметры реестра показателей (configs/indicators.yaml → params)."""
     return load_yaml("indicators.yaml")["params"]
 
 
@@ -91,45 +92,55 @@ def gmp_method_used(ctx: Context) -> pd.Series:
 
 
 def gmp_pc(ctx: Context) -> pd.Series:
+    """ВМП на душу населения (оценка команды): ВМП / P (руб.). Источник — расчёт (src/gmp.py)."""
     return _gmp_choose(ctx, "gmp_pc")
 
 
 def gmp_imputed_share(ctx: Context) -> pd.Series:
+    """Доля ВМП, распределённая по правилу для скрытых данных: импутированная ВДС / ВМП (доля). Источник — расчёт."""
     return _gmp_choose(ctx, "gmp_imputed_share")
 
 
 def gmp_structure(ctx: Context) -> pd.DataFrame:
+    """Доля отрасли в ВМП: ВДС_k МО / ВМП (доля). Источник — расчёт, метод 2."""
     s = ctx.structure.pivot_table(index=["territory_id", "year"], columns="section", values="share")
     s.columns = [f"gmp_structure_{c}" for c in s.columns]
     return s.reindex(ctx.wide.index)
 
 
 def wage(ctx: Context) -> pd.Series:
+    """Среднемесячная зарплата: W (руб.). Источник — БДПМО 8423007/8123007."""
     return ctx.col("wage")
 
 
 def payroll_pc(ctx: Context) -> pd.Series:
+    """ФОТ на жителя: ФОТ / P (руб. в год). Источник — БДПМО 8423006/8123006."""
     return _per_capita(ctx, "payroll")
 
 
 def shipped_pc(ctx: Context) -> pd.Series:
+    """Отгрузка на жителя: отгрузка / P (руб. в год). Источник — БДПМО 8401011/8201001."""
     return _per_capita(ctx, "shipped")
 
 
 def invest_pc(ctx: Context) -> pd.Series:
+    """Инвестиции в основной капитал на жителя: инвестиции / P (руб. в год). Источник — БДПМО 8109001."""
     return _per_capita(ctx, "invest")
 
 
 def invest_pc_nobudget(ctx: Context) -> pd.Series:
+    """Инвестиции на жителя без бюджетных средств: ряд Росстата (руб. в год). Источник — БДПМО 8109003."""
     return ctx.col("invest_pc_nobudget")
 
 
 def invest_share(ctx: Context) -> pd.Series:
+    """Инвестиции к продукту: инвестиции / ВМП (доля). Источник — БДПМО 8109001; расчёт."""
     gmp_abs = _gmp_choose(ctx, "gmp")
     return ctx.col("invest") / gmp_abs
 
 
 def emp_share(ctx: Context) -> pd.DataFrame:
+    """Доля занятых в отрасли: L_k / L (доля). Источник — БДПМО 8423005."""
     return pd.DataFrame({f"emp_share_{k}": ctx.col(f"workers__{k}") / ctx.col("workers") for k in OKVED2})
 
 
@@ -149,59 +160,72 @@ def _lq(ctx: Context, base_ids: set | None, prefix: str) -> pd.DataFrame:
 
 
 def lq(ctx: Context) -> pd.DataFrame:
+    """Коэффициент локализации (база — параметр lq_base): emp_share_k(МО) / emp_share_k(база) (раз). Источник — БДПМО 8423005."""
     base = ctx.params.get("lq_base", "ДФО")
     ids = set(ctx.mo.loc[ctx.mo["federal_district"].eq(base), "territory_id"]) if base != "Россия" else None
     return _lq(ctx, ids, "lq")
 
 
 def lq_ru(ctx: Context) -> pd.DataFrame:
+    """Коэффициент локализации (база — Россия): emp_share_k(МО) / emp_share_k(Россия) (раз). Источник — БДПМО 8423005."""
     return _lq(ctx, None, "lq_ru")
 
 
 def hhi_emp(ctx: Context) -> pd.Series:
+    """Индекс Херфиндаля структуры занятости: Σ_k emp_share_k² (индекс). Источник — БДПМО 8423005."""
     sh = emp_share(ctx)
     return (sh**2).sum(axis=1, min_count=1)
 
 
 def emp_share_unknown(ctx: Context) -> pd.Series:
+    """Доля работников вне опубликованных разделов: 1 − Σ_k emp_share_k (доля). Источник — БДПМО 8423005."""
     return (1 - emp_share(ctx).sum(axis=1, min_count=1)).clip(lower=0)
 
 
 def manuf_shipped_pc(ctx: Context) -> pd.Series:
+    """Отгрузка обрабатывающих производств на жителя: отгрузка раздела C / P (руб. в год). Источник — БДПМО 8401011 (раздел C)."""
     return _per_capita(ctx, "shipped__C")
 
 
 def agri_output_pc(ctx: Context) -> pd.Series:
+    """Продукция сельского хозяйства на жителя: продукция с/х (все категории хозяйств) / P (руб. в год). Источник — БДПМО 8007010."""
     return _per_capita(ctx, "agri_output")
 
 
 def manuf_orgs_per_10k(ctx: Context) -> pd.Series:
+    """Обрабатывающие организации на 10 тыс. жителей: организации раздела C, представившие отчёт / P × 10⁴ (на 10 тыс.). Источник — БДПМО 8942010 (раздел C)."""
     return ctx.col("n_orgs_rep__C") / ctx.col("pop") * 1e4
 
 
 def employment_ratio(ctx: Context) -> pd.Series:
+    """Работники крупных и средних организаций на жителя трудоспособного возраста: L / население трудоспособного возраста (доля). Источник — БДПМО 8423005, 8112014."""
     return ctx.col("workers") / ctx.col("pop_working")
 
 
 def budget_own_share(ctx: Context) -> pd.Series:
+    """Бюджетная самостоятельность: доля налоговых и неналоговых доходов (%). Источник — БДПМО 8313015/8013015."""
     return ctx.col("budget_own_share")
 
 
 def budget_rev_pc(ctx: Context) -> pd.Series:
+    """Доходы местного бюджета на жителя: доходы / P (руб. в год). Источник — БДПМО 8013001."""
     return _per_capita(ctx, "budget_rev")
 
 
 # ============================================================================ социальная сфера
 def pop(ctx: Context) -> pd.Series:
+    """Население на 1 января: P (чел.). Источник — БДПМО 8112027 (+8112014, 8112013)."""
     return ctx.col("pop")
 
 
 def pop_growth(ctx: Context) -> pd.Series:
+    """Темп изменения населения за год: P_t / P_{t−1} − 1 (доля). Источник — БДПМО."""
     p = ctx.col("pop")
     return p / p.groupby(level="territory_id").shift(1) - 1
 
 
 def pop_growth_window(ctx: Context) -> pd.Series:
+    """Среднегодовой темп изменения населения за окно: (P_last / P_first)^(1/T) − 1 (доля в год). Источник — БДПМО."""
     p = ctx.col("pop").dropna()
     yr = p.index.get_level_values("year")
     g = pd.DataFrame({"p": p.values, "y": yr}, index=p.index.get_level_values("territory_id"))
@@ -214,49 +238,60 @@ def pop_growth_window(ctx: Context) -> pd.Series:
 
 def density(ctx: Context) -> pd.Series:
     # площадь МО почти не меняется: пропуски заполняются ближайшим известным значением того же МО
+    """Плотность населения: P / площадь (км²) (чел./км²). Источник — БДПМО 8006001."""
     g = ctx.col("area_ha").groupby(level="territory_id")
     area = g.ffill().groupby(level="territory_id").bfill()
     return ctx.col("pop") / (area / 100)
 
 
 def housing_pc(ctx: Context) -> pd.Series:
+    """Ввод жилья на жителя: ряд Росстата 8215001 (м² на жителя). Источник — БДПМО 8215001."""
     return ctx.col("housing_pc_src")
 
 
 def retail_pc(ctx: Context) -> pd.Series:
+    """Оборот розничной торговли на жителя: оборот / P (руб. в год). Источник — БДПМО 8401003/8201003."""
     return _per_capita(ctx, "retail")
 
 
 def living_space_pc(ctx: Context) -> pd.Series:
+    """Жилая площадь на жителя: ряд Росстата 8211001 (м²). Источник — БДПМО 8211001."""
     return ctx.col("living_space_pc")
 
 
 def preschool_coverage(ctx: Context) -> pd.Series:
+    """Охват детей 1–6 лет дошкольным образованием: ряд Росстата 8014006 (%). Источник — БДПМО 8014006."""
     return ctx.col("preschool_coverage")
 
 
 def clinics_per_10k(ctx: Context) -> pd.Series:
+    """Лечебно-профилактические организации на 10 тыс. жителей: организации / P × 10⁴ (на 10 тыс.). Источник — БДПМО 8018000."""
     return ctx.col("clinics") / ctx.col("pop") * 1e4
 
 
 def natural_growth(ctx: Context) -> pd.Series:
+    """Естественный прирост на 1000 жителей: (родившиеся − умершие) / P × 1000 (‰). Источник — БДПМО 8112003, 8112001."""
     return (ctx.col("births") - ctx.col("deaths")) / ctx.col("pop") * 1000
 
 
 def old_age_share(ctx: Context) -> pd.Series:
+    """Доля населения старше трудоспособного возраста: P_old / P (доля). Источник — БДПМО 8112014."""
     return ctx.col("pop_old") / ctx.col("pop")
 
 
 # ============================================================================ потребление
 def spend_share(ctx: Context) -> pd.DataFrame:
+    """Доля категории в безналичных тратах: траты категории / все траты (доля). Источник — СберИндекс."""
     return pd.DataFrame({f"spend_share_{c}": ctx.col(f"spend_share_{c}") for c in SPEND_CATS})
 
 
 def spend_to_wage(ctx: Context) -> pd.Series:
+    """Траты к зарплате: среднемесячные траты на жителя / W (доля). Источник — СберИндекс; БДПМО."""
     return ctx.col("spend_total") / ctx.col("wage")
 
 
 def market_access(ctx: Context) -> pd.Series:
+    """Индекс доступности рынков (2024): Σ_d N_d / τ_od, нормировано 0–1000 (индекс). Источник — СберИндекс."""
     return ctx.col("market_access")
 
 

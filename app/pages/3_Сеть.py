@@ -30,6 +30,7 @@ st.title("Сеть")
 
 @st.cache_resource(show_spinner="Строю сеть…", max_entries=2)  # сеть всей России — ~150 МБ; общая, без копий
 def build(params_json: str, year: int):
+    """Сеть выбранного года (общий кэш): узлы, матрицы расстояний и весов, рёбра, статистика, признаки."""
     p = json.loads(params_json)
     net = network.build(p, years=[year])[year]
     return net.ids, net.D, net.W, net.A, net.edges(), net.stats(), net.X
@@ -55,7 +56,7 @@ def _ix(options: list, value, default: int = 0) -> int:
 
 
 with st.form("net"):
-    st.markdown("**Экономическое расстояние** — признаки и веса a_k")
+    st.markdown("**Показатели и их веса**")
     feats = st.multiselect(
         "Признаки", feat_pool, default=list(cur_feats), format_func=lambda c: f"{reg.at[c, 'name']} ({c})"
     )
@@ -77,7 +78,7 @@ with st.form("net"):
         index=_ix(["drop", "pairwise"], cur.get("missing", defaults.get("missing"))),
         format_func={"drop": "исключить из сети года", "pairwise": "по общим признакам пары"}.get,
     )
-    st.markdown("**География** — D = α·D_econ + (1 − α)·D_geo (времени в пути в данных нет — только км)")
+    st.markdown("**География** · α — доля экономики в расстоянии, остальное — расстояние на местности (км)")
     g1, g2, g3, g4, g5, g6 = st.columns(6)
     gw = cur_geo.get("weights", {})
     alpha = g1.slider("α (доля экономики)", 0.0, 1.0, float(cur_geo.get("alpha", 1.0)), 0.05)
@@ -91,7 +92,7 @@ with st.form("net"):
         index=_ix(["line", "adjacency", "exclude"], cur_geo.get("no_road", "line")),
         format_func={"line": "прямая × извилистость", "adjacency": "только смежность", "exclude": "без географии"}.get,
     )
-    st.markdown("**Ребро и прореживание**")
+    st.markdown("**Связи**")
     e1, e2, e3, e4, e5 = st.columns(5)
     ew = e1.selectbox(
         "Расстояние → вес",
@@ -134,10 +135,7 @@ st.session_state["_net_override"] = override  # постоянная копия:
 h = network.config_hash(params)
 ids, D, W, A, edges, stats, X = build(json.dumps(params, sort_keys=True, ensure_ascii=False), year)
 if len(feats) == 1:
-    st.warning(
-        "Ребро по одному показателю: кластеризация такой сети сводится к нарезке МО на интервалы значений "
-        "этого показателя. Для содержательной сети берите несколько показателей."
-    )
+    st.warning("С одним показателем сеть просто режет муниципалитеты по его значению. Возьмите несколько.")
 
 s1, s2, s3, s4, s5 = st.columns(5)
 s1.metric("Узлов", stats["nodes"])
@@ -148,13 +146,11 @@ s5.metric("Степень: мин / сред / макс", f"{stats['degree_min']
 if stats["dropped_missing"]:
     names = mo().set_index("territory_id")["name"]
     st.caption(
-        f"Исключено из сети {year} г. из-за пропуска признака: {len(stats['dropped_missing'])} МО — "
+        f"Не вошли в сеть {year} года из-за пропусков: {len(stats['dropped_missing'])} — "
         + ", ".join(names.get(t, str(t)) for t in stats["dropped_missing"][:15])
         + ("…" if len(stats["dropped_missing"]) > 15 else "")
     )
-st.caption(
-    f"Хэш конфигурации: `{h}` — по нему сеть воспроизводится (`data/networks/{h}/params.json` после сохранения)."
-)
+st.caption(f"Код этой сети: `{h}`. По нему её можно воспроизвести.")
 
 t1, t2, t3 = st.tabs(["Граф на карте", "Силовая раскладка", "Матрица расстояний"])
 with t1:
@@ -212,7 +208,7 @@ st.plotly_chart(layout(fd, 260, title="Распределение степене
 if st.button("Сохранить сеть за все годы выборки в data/networks/"):
     nets = network.build(params)
     hh = network.save(nets, params)
-    st.success(f"Сохранено: data/networks/{hh}/ (edges_{{год}}.parquet, params.json, stats.json)")
+    st.success(f"Сеть сохранена: data/networks/{hh}/")
 m = mo().set_index("territory_id")
 edges_out = edges.assign(source_name=edges["source"].map(m["name"]), target_name=edges["target"].map(m["name"]))
 downloads(edges_out, {"боковая_панель": side, "год": year, "hash": h, "сеть": params}, "network")

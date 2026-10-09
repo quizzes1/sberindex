@@ -1,4 +1,4 @@
-"""Тесты этапа 5: единый интерфейс методов кластеризации."""
+"""Тесты: единый интерфейс методов кластеризации."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def test_graph_method_needs_graph(toy):
         clustering.fit(X, None, {"method": "leiden", "k": 3})
 
 
-# ---------------------------------------------------------------- Уорд + k-means (этап 4 доработки)
+# ---------------------------------------------------------------- Уорд + k-means
 def test_ward_kmeans_starts_from_ward_centroids(toy):
     """k-means запускается из центроидов Уорда и не ухудшает их: инерция ≤ инерции разбиения Уорда."""
     from sklearn.cluster import KMeans

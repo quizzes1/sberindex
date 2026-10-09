@@ -1,4 +1,4 @@
-"""Кластеризация и индексы качества на сети по умолчанию (этап 5).
+"""Кластеризация и индексы качества на сети по умолчанию.
 
 Запуск:  python scripts/build_clusters.py [--quick]   (--quick: без CANUS — он медленный)
 
@@ -30,6 +30,7 @@ CLUSTERS = DATA / "clusters"
 
 
 def md(df: pd.DataFrame, fmt: str = "{:.3f}") -> str:
+    """Таблица pandas → таблица Markdown для отчёта."""
     cols = [str(c) for c in df.columns]
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
     for r in df.itertuples(index=False):
@@ -60,6 +61,7 @@ def add_wcss(S: pd.DataFrame, L: pd.DataFrame, nets: dict) -> pd.DataFrame:
 
 
 def main() -> int:
+    """Точка входа: кластеризация и индексы качества на сети по умолчанию."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
     ap.add_argument(
@@ -130,7 +132,7 @@ def main() -> int:
 
     # ------------------------------------------------------------- отчёт
     rep = [
-        "# Кластеризация и индексы качества (этап 5)",
+        "# Кластеризация и индексы качества",
         "",
         f"Сгенерировано `scripts/build_clusters.py`. Сеть `{h}` (параметры `configs/network.yaml`: "
         f"{', '.join(netp['sample']['federal_districts']) or 'вся Россия'}, "

@@ -1,4 +1,4 @@
-"""Сводные таблицы кластеров (этапы 5–6 доработки).
+"""Сводные таблицы кластеров.
 
 Таблица 1 «Характерные признаки кластеров»: для каждого кластера — средний z-score признаков по его МО,
 автоматическое текстовое описание по правилу (пороги — configs/summary.yaml), число МО и примеры.
@@ -25,10 +25,12 @@ OTHER_GRAY = "#9a9994"
 
 
 def cfg() -> dict:
+    """Параметры сводных таблиц (configs/summary.yaml)."""
     return load_yaml("summary.yaml")
 
 
 def cluster_color(label: int) -> str:
+    """Цвет кластера по номеру (K1 — первый цвет палитры); после восьмого — серый."""
     return CLUSTER_COLORS[label] if 0 <= label < len(CLUSTER_COLORS) else OTHER_GRAY
 
 
@@ -61,6 +63,7 @@ def fingerprint(ids) -> str:
 
 # ============================================================================ таблица 1
 def feature_list(netp: dict, c: dict | None = None) -> list[str]:
+    """Признаки описания кластеров: признаки сети и дополнительные из конфига."""
     c = c or cfg()["characteristic"]
     reg = pd.read_parquet(PROCESSED / "indicator_registry.parquet")["code"]
     out = list(dict.fromkeys([*netp["features"], *c.get("extra_features", [])]))
@@ -183,6 +186,7 @@ def _desc_path():
 
 
 def load_descriptions() -> dict:
+    """Описания кластеров, исправленные аналитиками (data/cluster_descriptions.yaml)."""
     p = _desc_path()
     return (yaml.safe_load(p.read_text(encoding="utf-8")) or {}) if p.exists() else {}
 

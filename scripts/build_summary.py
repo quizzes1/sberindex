@@ -1,4 +1,4 @@
-"""Сводные таблицы кластеров для разбиения по умолчанию (этапы 5–6 доработки).
+"""Сводные таблицы кластеров для разбиения по умолчанию.
 
 Запуск:  python scripts/build_summary.py [--year 2024] [--periods 2017 2020 2024]
 
@@ -27,6 +27,7 @@ from src.io import PROCESSED, REPORTS, load_yaml  # noqa: E402
 
 
 def md(df: pd.DataFrame, fmt: str = "{:.2f}") -> str:
+    """Таблица pandas → таблица Markdown для отчёта."""
     cols = [str(c) for c in df.columns]
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
     for r in df.itertuples(index=False):
@@ -39,10 +40,12 @@ def md(df: pd.DataFrame, fmt: str = "{:.2f}") -> str:
 
 
 def partition_key(h: str, method: str, k: int, mode: str, year: int) -> str:
+    """Ключ разбиения для сохранённых описаний кластеров: сеть, метод, k, режим, год."""
     return f"{h}|{method}|k{k}|{mode}|{year}"
 
 
 def main() -> int:
+    """Точка входа: сводные таблицы кластеров для разбиения по умолчанию."""
     part = load_yaml("dynamics.yaml")["partition"]
     ap = argparse.ArgumentParser()
     ap.add_argument("--year", type=int, default=None, help="год таблицы 1 (по умолчанию — последний год окна)")

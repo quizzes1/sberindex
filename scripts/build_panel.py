@@ -1,4 +1,4 @@
-"""Сборка годовой панели (этап 2).
+"""Сборка годовой панели.
 
 Запуск:  python scripts/build_panel.py
 
@@ -29,6 +29,7 @@ from src.io import GEO, PROCESSED, load_yaml  # noqa: E402
 
 
 def main() -> int:
+    """Точка входа: сборка годовой панели."""
     t = time.time()
     cfg = load_yaml("panel.yaml")
     PROCESSED.mkdir(parents=True, exist_ok=True)

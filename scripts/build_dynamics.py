@@ -1,4 +1,4 @@
-"""Динамика кластеров (этап 6): сквозные номера, переходы, мигранты, ARI, бутстрэп.
+"""Динамика кластеров: сквозные номера, переходы, мигранты, ARI, бутстрэп.
 
 Запуск:  python scripts/build_dynamics.py [--method kefrin --k 6] [--boot 50]
 
@@ -24,6 +24,7 @@ from src.io import DATA, PROCESSED, REPORTS, load_yaml  # noqa: E402
 
 
 def md(df: pd.DataFrame, fmt: str = "{:.3f}") -> str:
+    """Таблица pandas → таблица Markdown для отчёта."""
     cols = [str(c) for c in df.columns]
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
     for r in df.itertuples(index=False):
@@ -36,6 +37,7 @@ def md(df: pd.DataFrame, fmt: str = "{:.3f}") -> str:
 
 
 def main() -> int:
+    """Точка входа: динамика кластеров: сквозные номера, переходы, мигранты, ARI, бутстрэп."""
     cfg = load_yaml("dynamics.yaml")
     ap = argparse.ArgumentParser()
     ap.add_argument("--method", default=cfg["partition"]["method"])
@@ -146,7 +148,7 @@ def main() -> int:
     prof.index = [K(c) for c in prof.index]
     prof.index.name = "through"
     rep = [
-        "# Динамика кластеров (этап 6)",
+        "# Динамика кластеров",
         "",
         f"Сгенерировано `scripts/build_dynamics.py`. Сеть `{h}`, метод **{a.method}**, k = {a.k}, режим **{a.mode}** "
         f"(`configs/dynamics.yaml`). "

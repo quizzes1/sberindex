@@ -22,6 +22,7 @@ JPEG = {"quality": 90, "subsampling": 0, "optimize": True, "progressive": True}
 
 
 def render(name: str) -> int:
+    """Отрисовать страницы PDF в JPEG (и миниатюры для презентации)."""
     import pypdfium2 as pdfium
 
     pdf = pdfium.PdfDocument(str(DOCS / f"{name}.pdf"))
@@ -41,6 +42,7 @@ def render(name: str) -> int:
 
 
 def main() -> int:
+    """Точка входа: страницы презентации и отчёта для стартовой страницы «Проект» (app/hub.py)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--presentation", type=Path)
     ap.add_argument("--report", type=Path)

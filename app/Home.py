@@ -19,7 +19,8 @@ pages = {
         st.Page("pages/3_Сеть.py", title="Сеть", icon=":material/hub:"),
         st.Page("pages/4_Кластеры.py", title="Кластеры", icon=":material/scatter_plot:"),
         st.Page("pages/5_Динамика.py", title="Динамика", icon=":material/timeline:"),
-        st.Page("pages/6_Конвергенция.py", title="Конвергенция", icon=":material/trending_down:"),
+        # «Конвергенция» временно скрыта (решение команды); вернуть — раскомментировать строку:
+        # st.Page("pages/6_Конвергенция.py", title="Конвергенция", icon=":material/trending_down:"),
         st.Page("pages/7_Сводные_таблицы.py", title="Сводные таблицы", icon=":material/table_chart:"),
     ],
     "Сервис": [

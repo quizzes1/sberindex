@@ -1,4 +1,4 @@
-"""Пересчёт денежных показателей в цены базового года (src/prices.py, этап 3 доработки)."""
+"""Пересчёт денежных показателей в цены базового года (src/prices.py)."""
 
 from __future__ import annotations
 
@@ -126,4 +126,4 @@ def test_nominal_differs_from_real():
     real = network.features(p)
     nom = network.features(network.merge_params(p, {"prices": {"values": "nominal"}}))
     assert not np.allclose(real["gmp_pc"].dropna(), nom["gmp_pc"].dropna())
-    pd.testing.assert_series_equal(real["density"], nom["density"])
+    pd.testing.assert_series_equal(real["budget_own_share"], nom["budget_own_share"])

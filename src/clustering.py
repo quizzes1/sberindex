@@ -1,4 +1,4 @@
-"""Методы кластеризации с единым интерфейсом (этап 5).
+"""Методы кластеризации с единым интерфейсом.
 
     fit(features, graph, params) -> labels
 
@@ -28,6 +28,7 @@ EXTERNAL = ROOT / "external"
 
 
 def default_params() -> dict:
+    """Параметры по умолчанию из соответствующего YAML в configs/."""
     return load_yaml("clustering.yaml")
 
 

@@ -1,4 +1,4 @@
-"""σ- и β-конвергенция, клубы Филлипса–Сула (этап 6).
+"""σ- и β-конвергенция, клубы Филлипса–Сула.
 
 Запуск:  python scripts/build_convergence.py
 
@@ -29,6 +29,7 @@ from src.io import DATA, PROCESSED, REPORTS, load_yaml  # noqa: E402
 
 
 def md(df: pd.DataFrame, fmt: str = "{:.4f}") -> str:
+    """Таблица pandas → таблица Markdown для отчёта."""
     cols = [str(c) for c in df.columns]
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
     for r in df.itertuples(index=False):
@@ -46,6 +47,7 @@ def series(spec: dict, mo: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> int:
+    """Точка входа: σ- и β-конвергенция, клубы Филлипса–Сула."""
     cfg = load_yaml("dynamics.yaml")
     cc = cfg["convergence"]
     mo = pd.read_parquet(PROCESSED / "mo.parquet")
@@ -62,7 +64,7 @@ def main() -> int:
 
     sig_rows, beta_rows, club_rows = [], [], []
     rep = [
-        "# Конвергенция (этап 6)",
+        "# Конвергенция",
         "",
         "Сгенерировано `scripts/build_convergence.py`. Параметры — `configs/dynamics.yaml`. Все ряды в реальном "
         "выражении; состав — МО, действующие в конце окна (в последних неизменных границах).",

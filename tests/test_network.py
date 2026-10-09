@@ -1,4 +1,4 @@
-"""Тесты этапа 4: расстояния и сеть."""
+"""Тесты: расстояния и сеть."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def test_mutual_subset_of_symmetric(toy):
 def test_config_hash_stable():
     p = network.default_params()
     assert network.config_hash(p) == network.config_hash(dict(reversed(list(p.items()))))
-    q = network.merge_params(p, {"sparsify": {"k": 5}})
+    q = network.merge_params(p, {"sparsify": {"k": p["sparsify"]["k"] + 4}})
     assert network.config_hash(p) != network.config_hash(q) and q["sparsify"]["method"] == p["sparsify"]["method"]
 
 

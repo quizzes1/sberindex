@@ -26,6 +26,9 @@ RUN if [ "$WITH_CANUS" = "1" ]; then pip install -r requirements-optional.txt; f
 
 COPY . .
 
+# страницы интерфейса — на русском: иначе браузер предлагает «перевести» и автоперевод ломает надписи
+RUN python scripts/patch_streamlit_lang.py
+
 # Внешние методы (KEFRiN, при WITH_CANUS=1 — и CANUS) на закреплённых коммитах из configs/clustering.yaml.
 # Их код не входит в наш репозиторий (нет файла лицензии) — при сборке образа скачиваются только нужные коду
 # файлы (kefrin.py, canus.py — десятки КБ, а не 355 МБ демонстрационных данных). Если GitHub недоступен

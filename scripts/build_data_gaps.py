@@ -1,4 +1,4 @@
-"""Полнота данных по всей России и сверка с признаками научной работы-образца (этап 2 доработки).
+"""Полнота данных по всей России и сверка с признаками научной работы-образца.
 
 Запуск:  python scripts/build_data_gaps.py
 
@@ -120,6 +120,7 @@ SAMPLE = [
 
 
 def md(df: pd.DataFrame, fmt: str = "{:.0f}") -> str:
+    """Таблица pandas → таблица Markdown для отчёта."""
     cols = [str(c) for c in df.columns]
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
     for r in df.itertuples(index=False):
@@ -132,6 +133,7 @@ def md(df: pd.DataFrame, fmt: str = "{:.0f}") -> str:
 
 
 def main() -> int:
+    """Точка входа: полнота данных по всей России и сверка с признаками научной работы-образца."""
     w = pd.read_parquet(PROCESSED / "indicators_wide.parquet")
     reg = pd.read_parquet(PROCESSED / "indicator_registry.parquet").set_index("code")
     mo = pd.read_parquet(PROCESSED / "mo.parquet").set_index("territory_id")
@@ -148,7 +150,7 @@ def main() -> int:
     cov_fd = (core.groupby("federal_district")[base].apply(lambda x: x.notna().mean() * 100)).T
 
     out = [
-        "# Полнота данных по всей России и сверка с образцом (этап 2 доработки)",
+        "# Полнота данных по всей России и сверка с образцом",
         "",
         "Сгенерировано `scripts/build_data_gaps.py`. Покрытие — доля действующих МО России с данными (пропуск ≠ ноль: "
         "скрытые Росстатом значения не заполняются).",

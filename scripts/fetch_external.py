@@ -86,6 +86,7 @@ def fetch_git(name: str, url: str, commit: str, files: list[str]) -> None:
 
 
 def fetch(name: str, url: str, commit: str, files: list[str]) -> None:
+    """Скачать нужные файлы внешнего репозитория на закреплённом коммите (с меткой .commit)."""
     dest = EXTERNAL / name
     marker = dest / ".commit"  # метка: какой коммит лежит в external/<имя>
     if marker.exists() and marker.read_text().strip() == commit and all((dest / f).exists() for f in files[:1]):
@@ -107,6 +108,7 @@ def fetch(name: str, url: str, commit: str, files: list[str]) -> None:
 
 
 def main() -> int:
+    """Точка входа: загружает нужные файлы внешних репозиториев (KEFRiN, CANUS, Pattern) на закреплённых коммитах в external/."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="")
     ap.add_argument("--soft", action="store_true", help="не падать, если репозиторий недоступен")
