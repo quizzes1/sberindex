@@ -40,6 +40,7 @@ class Context:
 
     @classmethod
     def load(cls, params: dict | None = None) -> Context:
+        """Читает панель, справочник МО и оценки ВМП из data/processed; params дополняют настройки реестра."""
         p = {**registry_params(), **(params or {})}
         wide = pd.read_parquet(PROCESSED / "panel_wide.parquet").set_index(["territory_id", "year"]).sort_index()
         mo = pd.read_parquet(PROCESSED / "mo.parquet")
@@ -48,6 +49,7 @@ class Context:
         return cls(wide=wide, mo=mo, gmp=gmp, structure=st, params=p)
 
     def col(self, name: str) -> pd.Series:
+        """Столбец панели по имени; если его нет — ряд из NaN (показатель не публиковался)."""
         return self.wide[name] if name in self.wide else pd.Series(np.nan, index=self.wide.index)
 
     def region(self) -> pd.Series:

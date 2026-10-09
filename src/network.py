@@ -307,12 +307,14 @@ class YearNetwork:
     geo_report: dict = field(default_factory=dict)
 
     def edges(self) -> pd.DataFrame:
+        """Рёбра сети: source, target, вес (сходство) и расстояние."""
         i, j = np.where(np.triu(self.A, 1))
         return pd.DataFrame(
             {"source": self.ids[i], "target": self.ids[j], "weight": self.W[i, j], "distance": self.D[i, j]}
         )
 
     def graph(self) -> nx.Graph:
+        """Сеть как граф networkx (узлы — territory_id, у рёбер атрибуты weight и distance)."""
         g = nx.Graph()
         g.add_nodes_from(int(t) for t in self.ids)
         for r in self.edges().itertuples():
@@ -320,6 +322,7 @@ class YearNetwork:
         return g
 
     def stats(self) -> dict:
+        """Сводка по сети года: узлы, рёбра, компоненты, степени."""
         n = len(self.ids)
         ncomp, lab = connected_components(self.A, directed=False)
         deg = self.A.sum(axis=1)

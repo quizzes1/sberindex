@@ -195,3 +195,7 @@ reports/    методика, словарь данных, отчёты по к�
 - Shalileh S., Mirkin B. Community partitioning over feature-rich networks using an extended k-means method. Entropy 2022, 24(5), 626 (KEFRiN). Shalileh S. A filtered gradient descent clustering method to recover communities in attributed networks. IEEE Access, 2025 (CANUS).
 - Росстат, раздел «Национальные счета»: ВРП, ВДС по ОКВЭД2, валовой городской продукт ДФО. https://rosstat.gov.ru/statistics/accounts
 - Шрифт интерфейса Onest — SIL Open Font License 1.1 (`app/static/fonts/OFL.txt`).
+
+## Лицензия
+
+Код проекта — MIT (`LICENSE`). Данные распространяются на условиях источников (см. выше). Внешние репозитории KEFRiN, CANUS и Pattern в проект не копируются: `scripts/fetch_external.py` скачивает их в `external/` (каталог в `.gitignore`).
